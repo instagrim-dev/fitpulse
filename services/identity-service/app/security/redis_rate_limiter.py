@@ -40,6 +40,7 @@ class RedisSlidingWindowRateLimiter:
         window_seconds: int,
         key_prefix: str = "rate"
     ) -> None:
+        """Initialise the Redis client, window configuration, and Lua script cache."""
         self._client = client
         self._max_requests = max_requests
         self._window_ms = window_seconds * 1000
@@ -47,6 +48,7 @@ class RedisSlidingWindowRateLimiter:
         self._script = client.register_script(self._LUA_SCRIPT)
 
     def allow(self, key: str) -> bool:
+        """Return ``True`` when the key is still within the distributed rate limit."""
         now_ms = int(time.time() * 1000)
         redis_key = f"{self._key_prefix}:{key}"
         try:

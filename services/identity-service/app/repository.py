@@ -17,6 +17,8 @@ from .domain.contracts import CreateAccountInput
 
 @dataclass(slots=True)
 class AccountRecord:
+    """Row projection used when mapping database tuples to domain aggregates."""
+
     account_id: str
     tenant_id: str
     email: str
@@ -28,9 +30,11 @@ class AccountRepository:
     """Postgres-backed account persistence with idempotency support."""
 
     def __init__(self, pool: ConnectionPool) -> None:
+        """Store the connection pool used for all database interactions."""
         self._pool = pool
 
     def _hash_email(self, email: str) -> bytes:
+        """Normalise an email address and return its SHA-256 digest."""
         return hashlib.sha256(email.lower().encode("utf-8")).digest()
 
     def create_account(
@@ -38,7 +42,7 @@ class AccountRepository:
         payload: CreateAccountInput,
         idempotency_key: str | None,
     ) -> Tuple[Account, bool]:
-        """Persist an account record and return (account, replay)."""
+        """Persist an account record and return a tuple of (account, replay flag)."""
         with self._pool.connection() as conn:
             with conn.cursor(row_factory=tuple_row) as cur:
                 cur.execute("SELECT set_config('app.tenant_id', %s, true)", (payload.tenant_id,))
@@ -102,7 +106,7 @@ class AccountRepository:
         return self._map_record(record), False
 
     def get_account(self, account_id: str, tenant_id: str) -> Account | None:
-        """Fetch an account by identifier or return None."""
+        """Fetch an account belonging to the specified tenant or return ``None``."""
         with self._pool.connection() as conn:
             with conn.cursor(row_factory=tuple_row) as cur:
                 cur.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant_id,))
@@ -120,6 +124,7 @@ class AccountRepository:
         return self._map_record(row)
 
     def _map_record(self, row: tuple) -> Account:
+        """Convert a raw database tuple into the domain ``Account`` dataclass."""
         return Account(
             account_id=row[0],
             tenant_id=row[1],

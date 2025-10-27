@@ -1,3 +1,5 @@
+"""FastAPI application wiring for the identity service."""
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -15,6 +17,7 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Initialise shared resources (Postgres pool, services) for the app lifecycle."""
     pool = ConnectionPool(settings.database_url, open=False)
     pool.open()
     app.state.pool = pool
@@ -31,6 +34,7 @@ app = FastAPI(title=settings.app_name, version=settings.version, lifespan=lifesp
 
 @app.get("/healthz", tags=["health"])
 def healthz() -> dict[str, str]:
+    """Return a minimal readiness indicator used by orchestration systems."""
     return {"status": "ok"}
 
 

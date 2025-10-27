@@ -14,21 +14,23 @@ class AccountService:
     """Account workflows backed by Postgres storage."""
 
     def __init__(self, repository: AccountRepository) -> None:
+        """Store dependencies used to orchestrate persistence and token issuance."""
         self._repository = repository
 
     def create_account(
         self, payload: CreateAccountInput, idempotency_key: str | None
     ) -> Tuple[Account, bool]:
-        """Delegate account creation to the repository."""
+        """Create or replay an account record using repository idempotency semantics."""
         return self._repository.create_account(payload, idempotency_key)
 
     def get_account(self, account_id: str, tenant_id: str) -> Account | None:
-        """Retrieve an account by identifier."""
+        """Retrieve an account by identifier ensuring the tenant scope matches."""
         return self._repository.get_account(account_id, tenant_id)
 
     def issue_token(
         self, account_id: str, tenant_id: str, scopes: list[str] | None = None
     ) -> tuple[str, int]:
+        """Issue a JWT for the given account or raise when the tenant/account mismatch."""
         account = self._repository.get_account(account_id, tenant_id)
         if account is None:
             raise ValueError("account not found")

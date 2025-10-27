@@ -68,6 +68,7 @@ task test:go
 task test:python     # installs .[dev] in container before pytest
 task test:integration # Go integration (Testcontainers)
 task docs:lint        # Spectral lint for OpenAPI definitions
+task docs:identity    # Build Sphinx docs for identity service (HTML in services/identity-service/docs/_build/html)
 
 # Frontend workflows
 task web:install
@@ -130,6 +131,7 @@ Hooks run formatters/lints (gofmt/goimports, golangci-lint, black, ruff, prettie
 | `task test:integration` | Go integration suite (Postgres via Testcontainers) covering outbox dispatcher success, DLQ failures, schema caching, and unknown event handling |
 | `task web:test` | Vitest frontend unit tests |
 | `task docs:lint` | Lints OpenAPI specs with Spectral |
+| `task docs:identity` | Builds Sphinx HTML docs for the identity service |
 | `task smoke:compose` | Starts a minimal stack (Postgres, Kafka, identity/activity services) and verifies Schema Registry subjects |
 
 ## Continuous Integration & Distribution

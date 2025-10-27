@@ -43,4 +43,5 @@ htmlcov/
 frontend/web/coverage/
 frontend/web/.vite/
 frontend/web/.turbo/
+services/identity-service/docs/_build/
 frontend/web/typedoc/

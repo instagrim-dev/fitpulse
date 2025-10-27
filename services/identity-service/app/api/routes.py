@@ -1,3 +1,5 @@
+"""HTTP route definitions for the identity service."""
+
 from __future__ import annotations
 
 import logging
@@ -18,6 +20,8 @@ router = APIRouter(prefix="/v1")
 
 
 class AccountResponse(BaseModel):
+    """Serialised representation of an `Account` aggregate."""
+
     account_id: str
     tenant_id: str
     email: EmailStr
@@ -26,6 +30,7 @@ class AccountResponse(BaseModel):
 
     @classmethod
     def from_domain(cls, account: Account) -> "AccountResponse":
+        """Build a response model from the domain aggregate."""
         return cls(
             account_id=account.account_id,
             tenant_id=account.tenant_id,
@@ -36,23 +41,31 @@ class AccountResponse(BaseModel):
 
 
 class CreateAccountRequest(BaseModel):
+    """Payload accepted when creating a tenant-scoped account."""
+
     tenant_id: str = Field(..., alias="tenant_id")
     email: EmailStr
     disabled: bool = False
 
 
 class CreateAccountResponse(BaseModel):
+    """Response returned after processing an account creation request."""
+
     account: AccountResponse
     idempotent_replay: bool
 
 
 class TokenRequest(BaseModel):
+    """JSON body used to request a JWT for an account."""
+
     account_id: str
     tenant_id: str
     scopes: list[str] | None = None
 
 
 class TokenResponse(BaseModel):
+    """Token issuance response containing the bearer token and metadata."""
+
     access_token: str
     token_type: str = "bearer"
     expires_in: int
@@ -63,6 +76,7 @@ settings = get_settings()
 
 
 def _build_rate_limiter() -> SlidingWindowRateLimiter | RedisSlidingWindowRateLimiter:
+    """Instantiate the configured rate limiter backend, preferring Redis when available."""
     if settings.rate_limit_backend == "redis" and settings.redis_url:
         try:
             import redis
@@ -90,6 +104,7 @@ rate_limiter = _build_rate_limiter()
 
 
 def get_service(request: Request) -> AccountService:
+    """Resolve the `AccountService` stored on the FastAPI application state."""
     service: AccountService = request.app.state.account_service
     return service
 

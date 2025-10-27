@@ -11,7 +11,22 @@ from ..config import get_settings
 
 
 def issue_access_token(*, subject: str, tenant_id: str, scopes: list[str] | None = None) -> tuple[str, int]:
-    """Create a signed JWT representing an authenticated account."""
+    """Create a signed JWT representing an authenticated account.
+
+    Parameters
+    ----------
+    subject:
+        Account identifier to embed in the token `sub` claim.
+    tenant_id:
+        Tenant context assigned to the token for downstream RLS checks.
+    scopes:
+        Optional scope list; defaults to the identity service's standard read/write scopes.
+
+    Returns
+    -------
+    tuple[str, int]
+        A tuple containing the encoded JWT string and its TTL (in seconds).
+    """
 
     settings = get_settings()
     now = int(time.time())
@@ -32,7 +47,23 @@ def issue_access_token(*, subject: str, tenant_id: str, scopes: list[str] | None
 
 
 def decode_access_token(token: str) -> dict[str, Any]:
-    """Decode and verify a JWT returning its payload."""
+    """Decode and verify a JWT returning its payload.
+
+    Parameters
+    ----------
+    token:
+        Encoded JWT issued by this service.
+
+    Returns
+    -------
+    dict[str, Any]
+        The decoded payload if signature and issuer checks succeed.
+
+    Raises
+    ------
+    jwt.PyJWTError
+        Propagated when the token is invalid, expired, or signed by another issuer.
+    """
 
     settings = get_settings()
     return jwt.decode(
