@@ -11,4 +11,4 @@ cd services/activity-service
 export TESTCONTAINERS_RYUK_DISABLED=${TESTCONTAINERS_RYUK_DISABLED:-true}
 export TESTCONTAINERS_CHECK_DUPLICATE=true
 
-go test -tags=integration ./internal/outbox -run TestDispatcherPublishesMessages -v
+go test -tags=integration ./internal/outbox -v

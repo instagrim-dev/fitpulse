@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -23,7 +23,7 @@ import (
 	postgrescontainer "github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
-func TestDispatcherProcessBatchPublishesAndMarks(t *testing.T) {
+func TestDispatcherPublishesMessages(t *testing.T) {
 	ctx := context.Background()
 	pool, cleanup := setupPostgres(t, ctx)
 	defer cleanup()
@@ -51,12 +51,11 @@ func TestDispatcherProcessBatchPublishesAndMarks(t *testing.T) {
 	require.Greater(t, afterHistogram, beforeHistogram)
 
 	var published int
-	err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM outbox WHERE published_at IS NOT NULL`).Scan(&published)
-	require.NoError(t, err)
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM outbox WHERE published_at IS NOT NULL`).Scan(&published))
 	require.Equal(t, 1, published)
 }
 
-func TestDispatcherProcessBatchRoutesToDLQOnFailure(t *testing.T) {
+func TestDispatcherRoutesMessagesToDLQOnFailure(t *testing.T) {
 	ctx := context.Background()
 	pool, cleanup := setupPostgres(t, ctx)
 	defer cleanup()
@@ -88,6 +87,74 @@ func TestDispatcherProcessBatchRoutesToDLQOnFailure(t *testing.T) {
 	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM outbox WHERE published_at IS NOT NULL`).Scan(&published)
 	require.NoError(t, err)
 	require.Equal(t, 1, published)
+}
+
+func TestDispatcherCachesSchemaIDsAcrossBatch(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := setupPostgres(t, ctx)
+	defer cleanup()
+
+	tenantID := uuid.NewString()
+	require.NotZero(t, seedOutbox(t, ctx, pool, tenantID, uuid.NewString(), "activity.created"))
+	require.NotZero(t, seedOutbox(t, ctx, pool, tenantID, uuid.NewString(), "activity.created"))
+
+	producer := &stubProducer{}
+	registry := &stubRegistry{id: 21}
+	dispatcher := NewDispatcher(pool, producer, registry, 10*time.Millisecond, 5)
+
+	beforeDelivered := testutil.ToFloat64(deliveredCounter)
+	beforeHistogram := histogramSampleCount(t)
+
+	require.NoError(t, dispatcher.processBatch(ctx))
+
+	require.Len(t, producer.writes, 1)
+	require.Len(t, producer.writes[0].messages, 2)
+	require.Len(t, registry.calls, 1, "schema registry should be invoked once due to cache")
+
+	afterDelivered := testutil.ToFloat64(deliveredCounter)
+	require.InDelta(t, beforeDelivered+2, afterDelivered, 0.0001)
+
+	afterHistogram := histogramSampleCount(t)
+	require.Greater(t, afterHistogram, beforeHistogram)
+}
+
+func TestDispatcherUnknownSchemaMovesEventsToDLQ(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := setupPostgres(t, ctx)
+	defer cleanup()
+
+	tenantID := uuid.NewString()
+	eventID := seedOutbox(t, ctx, pool, tenantID, uuid.NewString(), "activity.unknown")
+	require.NotZero(t, eventID)
+
+	producer := &stubProducer{}
+	registry := &stubRegistry{id: 99}
+	dispatcher := NewDispatcher(pool, producer, registry, 10*time.Millisecond, 5)
+
+	beforeFailed := testutil.ToFloat64(failedCounter)
+	beforeDLQ := testutil.ToFloat64(dlqCounter.WithLabelValues("activity_events"))
+
+	require.NoError(t, dispatcher.processBatch(ctx))
+
+	require.Empty(t, producer.writes, "unknown schema should skip kafka writes")
+	require.Empty(t, registry.calls, "schema registry should not be invoked when metadata missing")
+
+	var dlqCount int
+	var reason string
+	err := pool.QueryRow(ctx, `SELECT COUNT(*), MAX(reason) FROM outbox_dlq WHERE event_id = $1`, eventID).Scan(&dlqCount, &reason)
+	require.NoError(t, err)
+	require.Equal(t, 1, dlqCount)
+	require.Contains(t, reason, "no schema metadata for event_type=activity.unknown")
+
+	var publishedAt time.Time
+	err = pool.QueryRow(ctx, `SELECT published_at FROM outbox WHERE event_id = $1`, eventID).Scan(&publishedAt)
+	require.NoError(t, err)
+	require.False(t, publishedAt.IsZero(), "event should still be marked as published")
+
+	afterFailed := testutil.ToFloat64(failedCounter)
+	require.InDelta(t, beforeFailed+1, afterFailed, 0.0001)
+	afterDLQ := testutil.ToFloat64(dlqCounter.WithLabelValues("activity_events"))
+	require.InDelta(t, beforeDLQ+1, afterDLQ, 0.0001)
 }
 
 type stubProducer struct {
@@ -224,21 +291,25 @@ func seedOutbox(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tenantID,
 func runMigrations(t *testing.T, ctx context.Context, connStr string) {
 	t.Helper()
 
-	schemaPath := resolvePath(t, "../../../../db/postgres/migrations/0001_init.sql")
-	contents, err := os.ReadFile(schemaPath)
-	require.NoError(t, err)
-
-	sqlUp := string(contents)
-	if idx := strings.Index(sqlUp, "-- +migrate Down"); idx != -1 {
-		sqlUp = sqlUp[:idx]
-	}
-
 	pool, err := pgxpool.New(ctx, connStr)
 	require.NoError(t, err)
 	defer pool.Close()
 
-	_, err = pool.Exec(ctx, sqlUp)
+	migrationsDir := resolvePath(t, "../../../../db/postgres/migrations")
+	files, err := filepath.Glob(filepath.Join(migrationsDir, "*.up.sql"))
 	require.NoError(t, err)
+	require.NotEmpty(t, files, "expected at least one migration .up.sql file")
+
+	sort.Strings(files)
+
+	for _, file := range files {
+		contents, readErr := os.ReadFile(file)
+		require.NoErrorf(t, readErr, "read migration %s", file)
+
+		if _, execErr := pool.Exec(ctx, string(contents)); execErr != nil {
+			require.NoErrorf(t, execErr, "execute migration %s", file)
+		}
+	}
 }
 
 func resolvePath(t *testing.T, rel string) string {

@@ -1,0 +1,27 @@
+{
+  "typescript.tsdk": "frontend/web/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "typescript.preferences.importModuleSpecifier": "non-relative",
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/services/identity-service",
+    "${workspaceFolder}/libs/python"
+  ],
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": [
+    "services/identity-service/tests"
+  ],
+  "go.useLanguageServer": true,
+  "go.toolsEnvVars": {
+    "GOWORK": "${workspaceFolder}/go.work"
+  },
+  "gopls": {
+    "ui.diagnostic.analyses": {
+      "fieldalignment": true,
+      "shadow": true
+    },
+    "ui.usePlaceholders": true,
+    "formatting.gofumpt": true
+  }
+}

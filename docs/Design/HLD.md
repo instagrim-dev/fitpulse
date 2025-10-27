@@ -22,24 +22,20 @@ A modern **fitness and wellness tracker** that enables users to log, monitor, an
 ---
 
 ## 2. Architecture Summary
-```
-React (Frontend)
-   ↓ REST API (HTTPS)
-API Gateway / Ingress
-   ├─→ Identity & Account Service (Python/FastAPI)
-   │      ↳ AuthZ tokens, tenant scoping
-   ├─→ Activity Service (Go)
-   │      ↳ OLTP writes + transactional outbox
-   └─→ Exercise Ontology & Search Service (Go)
-          ↳ Graph traversal + search index
-          ↓
-PostgreSQL (source of truth)
-   ↕ (outbox, CDC)
-Kafka Topics
-   ↕
-Dgraph (exercise ontology)
-   ↓ (optional CDC / Stream)
-OLAP Store (Analytics, future phase)
+```mermaid
+flowchart TD
+  Frontend["React SPA"] -->|REST / HTTPS| Gateway["API Gateway / Ingress"]
+  Gateway --> Identity["Identity Service<br/>(FastAPI)"]
+  Gateway --> Activity["Activity Service<br/>(Go)"]
+  Gateway --> Ontology["Exercise Ontology Service<br/>(Go)"]
+
+  Identity --> Postgres[(PostgreSQL<br/>RLS)]
+  Activity --> Postgres
+  Activity --> Outbox[(Transactional<br/>Outbox)]
+  Outbox --> Kafka[(Kafka Topics)]
+  Kafka --> Ontology
+  Ontology --> Dgraph[(Dgraph<br/>Ontology Graph)]
+  Kafka --> Analytics[(Future OLAP / Analytics)]
 ```
 
 - **PostgreSQL** stores transactional identity and activity data with row-level security.
@@ -112,6 +108,31 @@ Ensures **atomic write + eventual consistency** across stores.
 
 ### 5.1 Outbox Pattern Considerations
 While the transactional outbox pattern provides a strong guarantee of atomicity, it introduces operational complexity. The outbox consumer becomes a critical component that requires robust monitoring and alerting on its processing lag, the size of the `outbox` table, and the Dead Letter Queue (DLQ) depth. A well-defined strategy for handling DLQ messages, including automated retries with exponential backoff and a clear process for manual intervention, is essential to prevent data drift between PostgreSQL and Dgraph.
+
+### 5.2 Event Propagation Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Web as Frontend
+    participant Id as Identity Service
+    participant Act as Activity Service
+    participant PG as PostgreSQL
+    participant OB as Outbox Table
+    participant KF as Kafka
+    participant Ont as Ontology Service
+    participant DG as Dgraph
+
+    Web->>Id: POST /v1/token
+    Id-->>Web: JWT with tenant scope
+    Web->>Act: POST /v1/activities
+    Act->>PG: Insert workout row
+    Act->>OB: Enqueue activity event
+    Act-->>Web: 202 Accepted (status=pending)
+    OB->>KF: Publish activity_events
+    KF->>Ont: Consume activity_events
+    Ont->>DG: Upsert ontology enrichment
+```
 
 ---
 

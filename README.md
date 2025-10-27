@@ -23,6 +23,22 @@ A three-service platform for tenant-aware identity, reliable activity ingestion,
 - **Exercise Ontology & Search (Go)** — synchronises exercise taxonomy in Dgraph, consumes activity events, exposes REST/GraphQL search.
 - **Shared Infrastructure** — Postgres 16, Kafka + Schema Registry, Dgraph Alpha, Prometheus scraping endpoints, Swagger UI pipeline.
 
+```mermaid
+flowchart LR
+  Web[React Frontend] -->|REST / HTTPS| Gateway[API Gateway]
+  Gateway --> Identity[Identity Service<br/>(FastAPI)]
+  Gateway --> Activity[Activity Service<br/>(Go)]
+  Gateway --> Ontology[Exercise Ontology Service<br/>(Go)]
+
+  Identity --> Postgres[(PostgreSQL<br/>RLS)]
+  Activity --> Postgres
+  Activity --> Outbox[(Transactional Outbox)]
+  Outbox --> Kafka[(Kafka + Schema Registry)]
+  Kafka --> Ontology
+  Ontology --> Dgraph[(Dgraph Ontology)]
+  Kafka --> Analytics[(Future Analytics / OLAP)]
+```
+
 Design decisions, contracts, and rollout plans live in `docs/Design/HLD.md` and `docs/Design/LLD.md`.
 
 ## Prerequisites
@@ -31,6 +47,12 @@ Design decisions, contracts, and rollout plans live in `docs/Design/HLD.md` and 
 - Task (installed automatically in CI; locally via `brew install go-task/tap/go-task` or manual download)
 - `corepack enable pnpm` (Node.js ≥20 recommended)
 - Optional: VS Code Dev Containers for a prebuilt toolchain (`.devcontainer/devcontainer.json`)
+
+### Editor IntelliSense
+
+- VS Code picks up workspace TypeScript, Go, and Python settings from `.vscode/settings.json` (including `go.work`, pyright paths, and the frontend TypeScript SDK).  
+- TypeScript module resolution now supports the `@/` alias shared between Vite and Vitest; Vitest pulls the main Vite config to keep IntelliSense aligned.  
+- Pyright is configured via `pyrightconfig.json` so identity-service and shared `libs/python` schemas resolve across services without extra editor tweaks.
 
 ## Three Musketeers Quickstart
 
@@ -103,7 +125,7 @@ Hooks run formatters/lints (gofmt/goimports, golangci-lint, black, ruff, prettie
 | --- | --- |
 | `task test:go` | Go unit tests for activity & ontology services |
 | `task test:python` | FastAPI JWT issuance, scopes, rate limiting (pytest) |
-| `task test:integration` | Go integration suite (Postgres, outbox dispatcher, repository tenant isolation) |
+| `task test:integration` | Go integration suite (Postgres via Testcontainers) covering outbox dispatcher success, DLQ failures, schema caching, and unknown event handling |
 | `task web:test` | Vitest frontend unit tests |
 | `task docs:lint` | Lints OpenAPI specs with Spectral |
 | `task smoke:compose` | Starts a minimal stack (Postgres, Kafka, identity/activity services) and verifies Schema Registry subjects |
