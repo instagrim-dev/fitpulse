@@ -6,6 +6,10 @@ import { AuthContext } from './context/AuthContext';
 
 const DEFAULT_USER_ID = import.meta.env.VITE_DEFAULT_USER_ID || 'user-1';
 
+/**
+ * Root application shell combining auth controls with activity and ontology panels.
+ * Maintains tenant and token state that downstream components consume via context.
+ */
 export default function App() {
   const [token, setToken] = useState('');
   const [tenantId, setTenantId] = useState('tenant-demo');

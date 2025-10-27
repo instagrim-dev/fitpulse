@@ -3,6 +3,10 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { AuthContext } from '../context/AuthContext';
 import { searchExercises, upsertExercise } from '../api/ontology';
 
+/**
+ * Composite panel for querying the ontology service and quickly adding new exercises.
+ * Provides read and write flows side-by-side so operator workflows stay in one view.
+ */
 export function OntologySearch() {
   const { token } = useContext(AuthContext);
   const [query, setQuery] = useState('');

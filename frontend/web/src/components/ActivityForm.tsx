@@ -3,11 +3,15 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AuthContext } from '../context/AuthContext';
 import { createActivity } from '../api/activity';
 
-interface Props {
+export interface ActivityFormProps {
   userId: string;
 }
 
-export function ActivityForm({ userId }: Props) {
+/**
+ * Form for submitting new activities to the backend for a specific user. The component
+ * invalidates the cached activity query on success so the list refreshes automatically.
+ */
+export function ActivityForm({ userId }: ActivityFormProps) {
   const { token } = useContext(AuthContext);
   const queryClient = useQueryClient();
   const [activityType, setActivityType] = useState('Run');

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "src/api/activity.ts",
+    "src/api/ontology.ts",
+    "src/components/ActivityForm.tsx",
+    "src/components/ActivityList.tsx",
+    "src/components/OntologySearch.tsx",
+    "src/context/AuthContext.tsx",
+    "src/App.tsx"
+  ],
+  "tsconfig": "tsconfig.json",
+  "out": "typedoc",
+  "categorizeByGroup": false,
+  "lightHighlightTheme": "github-light",
+  "darkHighlightTheme": "github-dark"
+}

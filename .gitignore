@@ -43,3 +43,4 @@ htmlcov/
 frontend/web/coverage/
 frontend/web/.vite/
 frontend/web/.turbo/
+frontend/web/typedoc/

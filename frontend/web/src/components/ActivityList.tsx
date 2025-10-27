@@ -3,11 +3,16 @@ import { useQuery } from '@tanstack/react-query';
 import { AuthContext } from '../context/AuthContext';
 import { listActivities } from '../api/activity';
 
-interface Props {
+export interface ActivityListProps {
   userId: string;
 }
 
-export function ActivityList({ userId }: Props) {
+/**
+ * Displays recent activities for the provided user and exposes basic pagination.
+ * Fetches data through React Query, ensuring the UI reacts to cache invalidations
+ * triggered elsewhere (for example, after submitting a new activity).
+ */
+export function ActivityList({ userId }: ActivityListProps) {
   const { token } = useContext(AuthContext);
   const [cursor, setCursor] = useState<string | undefined>();
 

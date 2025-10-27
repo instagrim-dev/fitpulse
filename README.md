@@ -72,6 +72,8 @@ task docs:lint        # Spectral lint for OpenAPI definitions
 # Frontend workflows
 task web:install
 task web:test
+pnpm run lint      # ESLint with TSDoc validation
+pnpm run docs      # Generate HTML docs (output in frontend/web/typedoc)
 ```
 
 To iterate on the frontend:
