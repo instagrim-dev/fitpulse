@@ -1,0 +1,36 @@
+# General
+.DS_Store
+*.log
+*.tmp
+.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+.python-version
+.venv/
+
+# Go
+bin/
+coverage.out
+
+# Node / Frontend
+node_modules/
+frontend/web/.pnpm-store/
+frontend/web/dist/
+
+# Docker / Compose
+**/tmp/
+**/vendor/
+
+# Editors/IDE
+.vscode/
+.idea/
+*.swp
+
+# Testcontainers
+**/.testcontainers.properties
+
+# Misc
+coverage/

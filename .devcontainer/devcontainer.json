@@ -1,0 +1,27 @@
+{
+  "name": "i5e-dev",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/go:1": {
+      "version": "1.25"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "postCreateCommand": "corepack enable pnpm && task prepull:images",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "ms-python.python",
+        "ms-azuretools.vscode-docker",
+        "task.vscode-task",
+        "testcontainerscloud.testcontainerscloud"
+      ]
+    }
+  },
+  "forwardPorts": [8000, 8080],
+  "remoteUser": "vscode"
+}

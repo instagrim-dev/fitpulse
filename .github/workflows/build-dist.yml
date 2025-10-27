@@ -1,0 +1,103 @@
+name: Build Distributions
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  go-binaries:
+    name: Go Services
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - name: activity-service
+            path: services/activity-service
+            binary: activity-service
+          - name: exercise-ontology-service
+            path: services/exercise-ontology-service
+            binary: exercise-ontology-service
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+      - name: Build binary
+        working-directory: ${{ matrix.path }}
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          go mod download
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w" -o dist/${{ matrix.binary }} ./cmd/api
+      - name: Package artifact
+        working-directory: ${{ matrix.path }}/dist
+        run: |
+          tar -czf ${{ matrix.binary }}-${{ github.ref_name }}.tar.gz ${{ matrix.binary }}
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-${{ matrix.name }}-${{ github.ref_name }}
+          path: ${{ matrix.path }}/dist/${{ matrix.binary }}-${{ github.ref_name }}.tar.gz
+
+  python-package:
+    name: Identity Service Package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build wheel and sdist
+        working-directory: services/identity-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install --no-cache-dir build
+          python -m build
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: identity-service-${{ github.ref_name }}
+          path: |
+            services/identity-service/dist/*.whl
+            services/identity-service/dist/*.tar.gz
+
+  frontend-dist:
+    name: Frontend Bundle
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+          run_install: false
+      - name: Install dependencies
+        working-directory: frontend/web
+        run: pnpm install --frozen-lockfile
+      - name: Build production bundle
+        working-directory: frontend/web
+        run: pnpm build
+      - name: Package artifact
+        working-directory: frontend/web
+        run: |
+          tar -czf web-dist-${{ github.ref_name }}.tar.gz dist
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist-${{ github.ref_name }}
+          path: frontend/web/web-dist-${{ github.ref_name }}.tar.gz

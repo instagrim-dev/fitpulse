@@ -1,0 +1,248 @@
+version: "3.9"
+
+services:
+  identity-service:
+    build:
+      context: ../../
+      dockerfile: services/identity-service/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - HTTP_PORT=8000
+      - POSTGRES_URL=postgres://platform:platform@postgres:5432/fitness
+      - JWT_SECRET=dev-shared-secret
+      - JWT_ISSUER=i5e.identity
+      - RATE_LIMIT_REQUESTS=50
+      - RATE_LIMIT_WINDOW_SECONDS=60
+      - RATE_LIMIT_BACKEND=redis
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      postgres-seed:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    networks:
+      - platform
+
+  activity-service:
+    build:
+      context: ../../
+      dockerfile: services/activity-service/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - HTTP_ADDRESS=:8080
+      - POSTGRES_URL=postgres://platform:platform@postgres:5432/fitness?sslmode=disable
+      - KAFKA_BROKERS=kafka:29092
+      - SCHEMA_REGISTRY_URL=http://schema-registry:8081
+      - JWT_SECRET=dev-shared-secret
+      - JWT_ISSUER=i5e.identity
+    depends_on:
+      postgres-seed:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_started
+      schema-registry:
+        condition: service_started
+    networks:
+      - platform
+
+  activity-dlq-manager:
+    build:
+      context: ../../
+      dockerfile: services/activity-service/Dockerfile
+      target: runtime
+    entrypoint: ["/usr/local/bin/activity-dlq-manager"]
+    environment:
+      - POSTGRES_URL=postgres://platform:platform@postgres:5432/fitness?sslmode=disable
+      - DLQ_POLL_INTERVAL=30s
+      - DLQ_MAX_RETRIES=5
+      - DLQ_BASE_DELAY=1m
+    depends_on:
+      postgres-seed:
+        condition: service_completed_successfully
+    networks:
+      - platform
+
+  exercise-ontology-service:
+    build:
+      context: ../../
+      dockerfile: services/exercise-ontology-service/Dockerfile
+    ports:
+      - "8090:8090"
+    environment:
+      - HTTP_ADDRESS=:8090
+      - DGRAPH_URL=http://dgraph-alpha:8080
+      - JWT_SECRET=dev-shared-secret
+      - JWT_ISSUER=i5e.identity
+    depends_on:
+      dgraph-alpha:
+        condition: service_healthy
+    networks:
+      - platform
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
+      POSTGRES_DB: fitness
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - platform
+
+  postgres-migrate:
+    image: migrate/migrate:v4.16.2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://platform:platform@postgres:5432/fitness?sslmode=disable
+    volumes:
+      - ../../db/postgres/migrations:/migrations
+    command: ["-path=/migrations", "-database", "postgres://platform:platform@postgres:5432/fitness?sslmode=disable", "up"]
+    networks:
+      - platform
+    restart: "on-failure"
+
+  postgres-seed:
+    image: postgres:16-alpine
+    depends_on:
+      postgres-migrate:
+        condition: service_completed_successfully
+    environment:
+      PGPASSWORD: platform
+    volumes:
+      - ../../db/postgres/seeds:/seeds
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["psql -h postgres -U platform -d fitness -f /seeds/dev_seed.sql"]
+    networks:
+      - platform
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - platform
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - platform
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      zookeeper:
+        condition: service_started
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,OUTSIDE:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,OUTSIDE://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    ports:
+      - "9092:9092"
+    networks:
+      - platform
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.6.1
+    depends_on:
+      kafka:
+        condition: service_started
+    environment:
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:29092
+      SCHEMA_REGISTRY_KAFKASTORE_SECURITY_PROTOCOL: PLAINTEXT
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    ports:
+      - "8081:8081"
+    networks:
+      - platform
+
+  dgraph-zero:
+    image: dgraph/dgraph:v23.1.0
+    command: dgraph zero --my=dgraph-zero:5080
+    ports:
+      - "5080:5080"
+      - "6080:6080"
+    networks:
+      - platform
+
+  dgraph-alpha:
+    image: dgraph/dgraph:v23.1.0
+    depends_on:
+      dgraph-zero:
+        condition: service_started
+    command: dgraph alpha --my=dgraph-alpha:7080 --zero=dgraph-zero:5080 --security whitelist=0.0.0.0/0
+    ports:
+      - "8080:8080"
+      - "9080:9080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - platform
+    environment:
+      - DGRAPH_ALPHA_TLS_SERVER_NAME=dgraph-alpha
+
+  dgraph-schema:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      dgraph-alpha:
+        condition: service_healthy
+    volumes:
+      - ../../db/dgraph/schema:/schema:ro
+      - ../../infrastructure/scripts/apply-dgraph-schema.sh:/scripts/apply-dgraph-schema.sh:ro
+    entrypoint: ["/bin/sh", "/scripts/apply-dgraph-schema.sh"]
+    environment:
+      SCHEMA_FILE: /schema/exercise.schema
+      DGRAPH_URL: http://dgraph-alpha:8080/alter
+    networks:
+      - platform
+
+  api-docs:
+    image: swaggerapi/swagger-ui:latest
+    ports:
+      - "8088:8080"
+    environment:
+      SWAGGER_CONFIG_URL: /swagger-config.json
+    volumes:
+      - ../../docs/API:/usr/share/nginx/html:ro
+    networks:
+      - platform
+
+networks:
+  platform:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  kafka-data:

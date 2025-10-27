@@ -1,0 +1,25 @@
+# Dgraph schema for the Exercise Ontology service
+# Load with: dgraph live -f exercise.schema --alpha dgraph-alpha:9080 --zero dgraph-zero:5080
+
+# Predicate definitions
+exercise_id: string @index(exact) @upsert .
+name: string @index(term, trigram) .
+difficulty: string @index(exact) .
+targets: [string] @index(term) .
+requires: [string] .
+contraindicated_with: [string] .
+complementary_to: [string] .
+last_updated: datetime @index(hour) .
+
+# Type definition
+
+type Exercise {
+    exercise_id
+    name
+    difficulty
+    targets
+    requires
+    contraindicated_with
+    complementary_to
+    last_updated
+}

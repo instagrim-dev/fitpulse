@@ -1,0 +1,54 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        language_version: python3.11
+        files: "^(services/identity-service/|scripts/|docs/DeveloperGuide.md)"
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+        files: "^services/identity-service/"
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v1.61.0
+    hooks:
+      - id: golangci-lint
+        files: "^services/(activity-service|exercise-ontology-service|libs/go)/"
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.3.3
+    hooks:
+      - id: prettier
+        files: "^(docs/|frontend/|README.md$)"
+  - repo: https://github.com/stoplightio/spectral
+    rev: v6.12.1
+    hooks:
+      - id: spectral
+        files: "^docs/API/.*\\.yaml$"
+        additional_dependencies:
+          - "@stoplight/spectral-cli@6.12.1"
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        entry: gofmt
+        language: system
+        types: [go]
+      - id: goimports
+        name: goimports
+        entry: goimports
+        language: system
+        types: [go]
+      - id: task-docs-lint
+        name: Spectral via Task
+        entry: task docs:lint
+        language: system
+        pass_filenames: false
+        files: "^docs/API/.*\\.yaml$"

@@ -1,0 +1,103 @@
+version: '3'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  build:go:
+    desc: Build Go services (activity & ontology)
+    cmds:
+      - docker run --rm -e GOTOOLCHAIN=auto -v "$PWD":/workspace -w /workspace/services/activity-service golang:1.25-alpine go build ./...
+      - docker run --rm -e GOTOOLCHAIN=auto -v "$PWD":/workspace -w /workspace/services/exercise-ontology-service golang:1.25-alpine go build ./...
+
+  test:go:
+    desc: Run Go unit tests
+    cmds:
+      - docker run --rm -e GOTOOLCHAIN=auto -v "$PWD":/workspace -w /workspace/services/activity-service golang:1.25-alpine go test ./...
+      - docker run --rm -e GOTOOLCHAIN=auto -v "$PWD":/workspace -w /workspace/services/exercise-ontology-service golang:1.25-alpine go test ./...
+
+  lint:python:
+    desc: Lint Python identity service
+    cmds:
+      - docker run --rm -v "$PWD":/workspace -w /workspace/services/identity-service python:3.11-slim sh -c "pip install --no-cache-dir ruff && ruff check app"
+
+  test:python:
+    desc: Run Python static checks
+    cmds:
+      - docker run --rm -v "$PWD":/workspace -w /workspace/services/identity-service -e PYTHONPATH=/workspace/services/identity-service python:3.11-slim sh -c "pip install --no-cache-dir .[dev] && pytest"
+
+  test:integration:
+    desc: Run integration tests (requires Docker daemon)
+    cmds:
+      - ./scripts/ci/run-integration.sh
+
+  smoke:compose:
+    desc: Build and smoke test docker-compose stack
+    cmds:
+      - ./scripts/ci/smoke.sh
+
+  docs:serve:
+    desc: Serve OpenAPI docs via Swagger UI (http://localhost:8088)
+    cmds:
+      - docker compose -f infrastructure/compose/docker-compose.yml up api-docs
+    silent: true
+
+  docs:lint:
+    desc: Lint OpenAPI specifications
+    cmds:
+      - docker run --rm -v "$PWD/docs/API":/workspace -w /workspace --entrypoint sh stoplight/spectral:latest -c "spectral lint \\$(find . -maxdepth 1 -type f -name '*.yaml' ! -name '.spectral.yaml')"
+
+  web:install:
+    desc: Install frontend dependencies
+    dir: frontend/web
+    cmds:
+      - pnpm install --frozen-lockfile
+
+  web:dev:
+    desc: Run frontend dev server (http://localhost:5173)
+    dir: frontend/web
+    cmds:
+      - pnpm run dev
+
+  web:build:
+    desc: Build production frontend bundle
+    dir: frontend/web
+    cmds:
+      - pnpm run build
+
+  web:test:
+    desc: Run Vitest unit tests
+    dir: frontend/web
+    cmds:
+      - pnpm run test:run
+
+  prepull:images:
+    desc: Pre-pull container images used by docker-compose
+    cmds:
+      - docker pull postgres:16-alpine
+      - docker pull confluentinc/cp-zookeeper:7.6.1
+      - docker pull confluentinc/cp-kafka:7.6.1
+      - docker pull confluentinc/cp-schema-registry:7.6.1
+      - docker pull dgraph/dgraph:v23.1.0
+      - docker pull migrate/migrate:v4.16.2
+      - docker pull python:3.11-slim
+      - docker pull redis:7-alpine
+
+  compose:up:
+    desc: Bring up full compose stack
+    cmds:
+      - docker compose -f infrastructure/compose/docker-compose.yml up --build
+
+  compose:down:
+    desc: Tear down compose stack
+    cmds:
+      - docker compose -f infrastructure/compose/docker-compose.yml down -v
+
+  ci:all:
+    desc: Run unit tests, linting, integration, and smoke tests
+    deps: [test:go, lint:python]
+    cmds:
+      - task test:integration
+      - task smoke:compose

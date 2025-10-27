@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ActivityCreated",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "activity_id",
+    "tenant_id",
+    "user_id",
+    "activity_type",
+    "started_at",
+    "duration_min",
+    "source",
+    "version"
+  ],
+  "properties": {
+    "activity_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "activity_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "duration_min": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

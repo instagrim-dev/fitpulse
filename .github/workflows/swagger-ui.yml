@@ -1,0 +1,43 @@
+name: Publish Swagger UI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'docs/API/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare static swagger site
+        run: |
+          mkdir -p swagger-out/specs
+          cp docs/API/index.html swagger-out/index.html
+          cp docs/API/swagger-config.json swagger-out/swagger-config.json
+          cp docs/API/*.yaml swagger-out/specs/
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: swagger-out
+
+ deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

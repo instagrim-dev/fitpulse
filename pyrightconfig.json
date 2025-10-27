@@ -1,0 +1,20 @@
+{
+  "venvPath": "services/identity-service",
+  "venv": ".venv",
+  "include": [
+    "services/identity-service/app",
+    "services/identity-service/tests",
+    "libs/python"
+  ],
+  "executionEnvironments": [
+    {
+      "root": "services/identity-service",
+      "extraPaths": [
+        "libs/python"
+      ]
+    },
+    {
+      "root": "libs/python"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "urls": [
+    {
+      "name": "Activity Service",
+      "url": "specs/activity-service.yaml"
+    },
+    {
+      "name": "Identity Service",
+      "url": "specs/identity-service.yaml"
+    },
+    {
+      "name": "Exercise Ontology Service",
+      "url": "specs/exercise-ontology-service.yaml"
+    }
+  ]
+}

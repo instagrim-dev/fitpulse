@@ -1,0 +1,206 @@
+openapi: 3.1.0
+info:
+  title: Identity Service API
+  version: 0.1.0
+  description: '
+
+    REST API powering tenant-aware account management and JWT issuance.
+
+    '
+  contact:
+    name: Platform Engineering
+    email: platform@example.com
+servers:
+- url: http://localhost:8000
+tags:
+- name: Accounts
+  description: Manage tenant-scoped accounts.
+- name: Tokens
+  description: Issue and manage access tokens.
+security:
+- bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Account:
+      type: object
+      required:
+      - account_id
+      - tenant_id
+      - email
+      - disabled
+      - created_at
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        disabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    TokenResponse:
+      type: object
+      required:
+      - access_token
+      - expires_in
+      - token_type
+      - tenant_id
+      properties:
+        access_token:
+          type: string
+        expires_in:
+          type: integer
+        token_type:
+          type: string
+        tenant_id:
+          type: string
+          format: uuid
+paths:
+  /v1/accounts:
+    post:
+      summary: Create account
+      description: Create a tenant-scoped account with optional idempotency.
+      operationId: createAccount
+      tags:
+      - Accounts
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          type: string
+        description: Optional idempotency key to make the request safe to retry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - tenant_id
+              - email
+              properties:
+                tenant_id:
+                  type: string
+                  format: uuid
+                email:
+                  type: string
+                  format: email
+                disabled:
+                  type: boolean
+                  default: false
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account:
+                    $ref: '#/components/schemas/Account'
+                  idempotent_replay:
+                    type: boolean
+        '200':
+          description: Account already existed (idempotent replay)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account:
+                    $ref: '#/components/schemas/Account'
+                  idempotent_replay:
+                    type: boolean
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '429':
+          description: Rate limited
+  /v1/accounts/{account_id}:
+    get:
+      summary: Get account by ID
+      description: Retrieve an account only if it belongs to the caller tenant.
+      operationId: getAccountById
+      tags:
+      - Accounts
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-Tenant-ID
+        in: header
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Account found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '404':
+          description: Account not found
+        '401':
+          description: Unauthorized
+  /v1/token:
+    post:
+      summary: Issue access token
+      description: Issue a signed JWT with tenant scope for an existing account.
+      operationId: issueToken
+      tags:
+      - Tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - account_id
+              - tenant_id
+              properties:
+                account_id:
+                  type: string
+                  format: uuid
+                tenant_id:
+                  type: string
+                  format: uuid
+                scopes:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden

@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ActivityStateChanged",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "activity_id",
+    "tenant_id",
+    "user_id",
+    "state",
+    "occurred_at"
+  ],
+  "properties": {
+    "activity_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "state": {
+      "type": "string",
+      "minLength": 1
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

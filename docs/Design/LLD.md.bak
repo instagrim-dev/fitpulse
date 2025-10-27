@@ -1,0 +1,443 @@
+Activity System vNext — Refreshed HLD + LLD
+
+Date: 2025-10-25
+Owners: Platform Eng, Data Eng, API Platform, Security, SRE
+Scope: Replace fragile idempotency and tenant isolation, harden eventing and parity, decouple readiness, standardize schema governance, and ship progressive delivery with quantifiable SLO/cost targets.
+
+⸻
+
+0) Executive summary (one page)
+
+Position: Keep Postgres as the only OLTP source of truth; collapse risk surface by removing Dgraph from the write path now and gate Dgraph to social edges only. Stream OLTP changes into OLAP via CDC and governed events. Enforce tenant and user isolation in the database, not middleware. Add progressive delivery gates so changes can’t outrun SLOs. Encrypt the pipes and reduce PII dwell time.
+
+What changes right now
+	•	Contracts:
+	•	Resource-level idempotency: server-managed tokens (72h TTL) with UNIQUE(tenant_id, user_id, idempotency_key) at the activities table. Duplicate POST returns 200 + prior resource.
+	•	Cursor pagination becomes explicit: opaque next_cursor over (start_ts, id), stable sort start_ts desc, id desc.
+	•	Rate-limit headers: X-RateLimit-* and Retry-After for both reads and writes; formal error matrix per route.
+	•	API & Event compatibility: SemVer for REST, Schema Registry for events; additive-only by default, 180‑day deprecation with Sunset/Deprecation headers.
+	•	Security/Privacy:
+	•	RLS enforced with USING + WITH CHECK on users, activities, friendships, goals, outbox; session tenancy set via `set_config('app.tenant_id',...)`; FORCE ROW LEVEL SECURITY on all tenant tables.
+	•	Email uniqueness scoped to tenant using deterministic email_hash; keep ciphertext opaque; uniform errors.
+	•	Kafka + OTLP TLS/mTLS; event payloads trimmed and compressed; DLQ dwell capped at 7 days.
+	•	Scalability/Resilience:
+	•	Outbox relay sharded with FOR UPDATE SKIP LOCKED, adaptive loop, max.in.flight=5, linger.ms≈10ms, batch.size≈64–128KB, compression=zstd; KEDA scales relays and consumers on lag/depth not CPU.
+	•	Kafka partitions sized for growth; keys hash on tenant_id:user_id to avoid hot partitions while preserving per‑user order.
+	•	Readiness decoupled from IdP/JWKS; auth gets grace + failover cache.
+	•	Governance/Parity:
+	•	Add activity.updated/activity.deleted events; tombstones with OLAP MERGE/UPSERT; streaming parity watermark, reconcile topic, and auto‑replayer.
+	•	Progressive delivery:
+	•	Argo Rollouts canary 5/25/50/100 with auto‑analysis on latency, 5xx, outbox_age_p95, consumer_lag, parity_lag; instant rollback to last‑good digest.
+
+Targets
+	•	Create Activity: p95 ≤ 200 ms, success ≥ 99.9% (per route).
+	•	List Activities: p95 ≤ 1 s at p95 traffic.
+	•	Parity: OLTP→OLAP parity_lag_p95 ≤ 300 s; consumer_lag_max ≤ 60 s.
+	•	Outbox: p95 outbox_lag_seconds < 300; recovery from 30‑min broker blip in ≤ 10 min.
+	•	Security: 0 RLS violations/month; PII dwell time reduced ≥ 70% across DLQ/telemetry.
+	•	Cost: Kafka hot storage −60–70% via schema+compression; OLTP bloat capped by outbox TTL/partitions (≤ 7 days hot).
+
+⸻
+
+1) Reference architecture (vNext)
+
+flowchart LR
+  subgraph Edge
+    CDN[CDN/WAF/Ingress TLS 1.3 H2/H3]
+  end
+  Client --> CDN --> GW[api-gateway]
+  GW -->|mTLS| ACT[activity-svc]
+  GW -->|mTLS| USR[user-svc]
+  GW -->|mTLS| INS[insights-svc]
+  GW -->|mTLS| SOC[social-svc]
+
+  ACT <--> PG[(Postgres OLTP)]
+  USR <--> PG
+  SOC <--> PG
+
+  ACT --> OBQ[(outbox table)]
+  OBQ --> OR[Outbox Relay (sharded)]
+  OR --> K[Kafka]
+
+  K --> OL[olap-loader]
+  OL --> CH[(ClickHouse/OLAP)]
+
+  SOC -. gated .-> DG[(Dgraph for social edges only)]
+
+  subgraph Control
+    REG[Schema Registry]
+    FLAGS[Feature Flags]
+    OTel[OTel Collector TLS/mTLS]
+  end
+
+  GW --> OTel
+  OR --> OTel
+  OL --> OTel
+  K <--> REG
+
+Notes
+	•	Dgraph is not in the write path; it remains optional for social edge traversal behind feature flags.
+	•	OLTP→OLAP parity via two paths: governed events + CDC (for bulk/backfill) into CH; insights read from CH with small, cacheable aggregates.
+
+⸻
+
+2) External API & compatibility
+
+2.1 Activities
+	•	POST /v1/activities
+	•	Headers: Idempotency-Key (client supplied) or request a server-issued token from /v1/idempotency-token.
+	•	On success: 202 Accepted with Location: /v1/activities/{id}, body {activity_id,status:"pending"}.
+	•	On duplicate: 200 OK with prior resource and Idempotent-Replay: true.
+	•	GET /v1/activities/{id} returns processing_state: pending|synced|failed.
+	•	GET /v1/users/{id}/activities?cursor&limit&type&from&to
+	•	Cursor: base64 of tuple [start_ts,id] opaque; stable ORDER BY start_ts DESC, id DESC.
+
+2.2 Error matrix & rate limits
+	•	Return RFC7807 with types: validation_failed, conflict, precondition_failed, rate_limited, dependency_unavailable.
+	•	Headers: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After on 429/503.
+
+2.3 Compatibility policy
+	•	REST: Semantic versioning at /v1; additive-only in minor releases; breaking changes require /v2+ with at least 180 days deprecation (Sunset, Deprecation, Link: sunset-doc).
+	•	Events: Schema Registry (JSON Schema or Avro). Backward + forward compatibility for N=2 versions; dual-publish window 90 days; consumer canary must pass before promotion.
+
+⸻
+
+3) Data model & DDL changes (expand/contract safe)
+
+Run online with CREATE INDEX CONCURRENTLY, VALIDATE CONSTRAINT, phased toggles, and backfills. See migration plan in §12.
+
+3.1 Activities & idempotency
+
+-- Add server-visible idempotency at the resource layer
+ALTER TABLE activities ADD COLUMN idempotency_key TEXT;
+CREATE UNIQUE INDEX CONCURRENTLY idx_uniq_activities_idem
+  ON activities(tenant_id, user_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
+
+-- Cover the stable read sort
+CREATE INDEX CONCURRENTLY idx_acts_user_start_id
+  ON activities(user_id, start_ts DESC, id DESC);
+
+3.2 Outbox safety, scale, and GC
+
+-- Scope dedupe per tenant, add claim lease, and speed selects
+ALTER TABLE outbox ADD COLUMN claimed_at TIMESTAMPTZ;
+DROP INDEX CONCURRENTLY IF EXISTS uniq_outbox_dedupe;
+CREATE UNIQUE INDEX CONCURRENTLY idx_uniq_outbox_dedupe_tenant
+  ON outbox(tenant_id, dedupe_key)
+  WHERE dedupe_key IS NOT NULL;
+CREATE INDEX CONCURRENTLY idx_outbox_unpublished
+  ON outbox(published_at, id)
+  WHERE published_at IS NULL;
+
+-- Partition by time for O(1) pruning
+ALTER TABLE outbox PARTITION BY RANGE (created_at);
+-- Example partition; cron creates next partitions monthly
+CREATE TABLE IF NOT EXISTS outbox_y2025m11
+  PARTITION OF outbox FOR VALUES FROM ('2025-11-01') TO ('2025-12-01');
+
+3.3 RLS hardening (tenancy + per-user)
+
+-- Enforce RLS everywhere it matters
+ALTER TABLE users       FORCE ROW LEVEL SECURITY;
+ALTER TABLE activities  FORCE ROW LEVEL SECURITY;
+ALTER TABLE friendships FORCE ROW LEVEL SECURITY;
+ALTER TABLE goals       FORCE ROW LEVEL SECURITY;
+ALTER TABLE outbox      ENABLE ROW LEVEL SECURITY;
+
+-- Tenancy policies (USING + WITH CHECK) for all tables
+CREATE POLICY tenant_isolation_users
+  ON users USING (tenant_id = current_setting('app.tenant_id')::uuid)
+  WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
+
+CREATE POLICY tenant_isolation_activities
+  ON activities USING (tenant_id = current_setting('app.tenant_id')::uuid)
+  WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
+
+CREATE POLICY tenant_isolation_friendships
+  ON friendships USING (tenant_id = current_setting('app.tenant_id')::uuid)
+  WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
+
+CREATE POLICY tenant_isolation_goals
+  ON goals USING (tenant_id = current_setting('app.tenant_id')::uuid)
+  WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
+
+CREATE POLICY tenant_isolation_outbox
+  ON outbox USING (tenant_id = current_setting('app.tenant_id')::uuid)
+  WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
+
+3.4 Email uniqueness without cross-tenant leakage
+
+-- Deterministic, case-insensitive hash stored separately from ciphertext
+ALTER TABLE users ADD COLUMN email_hash BYTEA;
+-- Backfill example (use KMS/HSM-managed key; avoid storing it in DB)
+-- UPDATE users SET email_hash = hmac(lower(email)::text, :hmac_key, 'sha256') WHERE email IS NOT NULL;
+CREATE UNIQUE INDEX CONCURRENTLY idx_uniq_users_tenant_emailhash
+  ON users(tenant_id, email_hash);
+-- Leave existing encrypted email column; drop global UNIQUE after migration completes.
+
+
+⸻
+
+4) Eventing & schema governance
+
+4.1 Producer settings and keying
+	•	enable.idempotence=true, acks=all, max.in.flight=5, linger.ms=5–15ms, batch.size=64–128KB, compression.type=zstd.
+	•	Key by a balanced composite hash of tenant_id + user_id to preserve per‑user order and avoid hot partitions.
+
+4.2 Topics & retention
+	•	Primary topics retention 3–7 days with DLQ ≤ 7 days; tiered/cold storage beyond that if needed. Partitions sized for peak × 2× headroom (e.g., 48 at 2k RPS).
+
+4.3 Event schemas
+	•	Avro or JSON Schema with Schema Registry; embed schema id/version in headers.
+	•	Emit activity.created|updated|deleted events; deleted uses a tombstone.
+
+4.4 Consumer idempotency and parity
+	•	Consumers write unique(event_id) in the same transaction as their mutation; keep a compacted processed-ids topic for replay audits.
+	•	Parity: per‑tenant watermark metric; auto‑replayer drains DLQ/backlog with rate limits.
+
+⸻
+
+5) Outbox relay algorithm (sharded)
+
+Loop until empty:
+  SELECT id, payload
+    FROM outbox
+   WHERE published_at IS NULL AND id > $last_seen
+   ORDER BY id
+   FOR UPDATE SKIP LOCKED
+   LIMIT $batch;
+  publish in batches → Kafka (acks=all, zstd, inflight=5);
+  mark published_at=now();
+  last_seen ← last row id;
+
+Sharding
+	•	N replicas each own a non‑overlapping id‑range window or modulo‑by‑N shard key.
+	•	KEDA scales replicas on rows_unpublished and outbox_age_p95.
+
+⸻
+
+6) OLTP→OLAP parity & CDC
+	•	Dual path: governed events for business semantics + Debezium CDC for bulk/backfill into ClickHouse.
+	•	Loader micro‑batches: 10k rows or 1–2 s windows; parallel by partition; MERGE with tombstones.
+	•	SLO: parity_lag_p95 ≤ 300s; alerts on > 300s for 15 min; expose per‑tenant counters and watermarks.
+
+⸻
+
+7) Security & privacy hardening
+	•	Zero trust in-cluster: mesh mTLS + NetworkPolicies; per‑service DB roles; per‑topic Kafka ACLs; Dgraph mTLS if enabled.
+	•	Telemetry: OTLP over TLS/mTLS; drop/denylist PII at source; 100% error logs, ≈20% sampled access/trace with exemplars.
+	•	Consent & residency: privacy flags enforce social/leaderboards; per‑tenant regional pinning; purpose‑based retention.
+	•	DSAR/erasure: orchestrated delete across OLTP, Kafka (tombstones), OLAP (retraction/rollup), Dgraph, DLQ, caches; publish Backup deletion windows.
+
+⸻
+
+8) Progressive delivery & rollback
+
+8.1 Argo Rollouts (example)
+
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata: { name: activity-svc }
+spec:
+  strategy:
+    canary:
+      steps:
+        - setWeight: 5
+        - pause: { duration: 5m }
+        - setWeight: 25
+        - pause: { duration: 5m }
+        - setWeight: 50
+        - pause: { duration: 5m }
+        - setWeight: 100
+      analysis:
+        templates:
+          - templateName: pass-if-slo-ok
+        startingStep: 0
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata: { name: pass-if-slo-ok }
+spec:
+  metrics:
+    - name: http_5xx_rate
+      successCondition: result < 0.01
+      provider: prometheus: { query: sum(rate(http_requests_total{status=~"5.."}[5m]))/sum(rate(http_requests_total[5m])) }
+    - name: p95_latency
+      successCondition: result < 0.2  # seconds
+      provider: prometheus: { query: histogram_quantile(0.95, sum(rate(http_server_duration_seconds_bucket[5m])) by (le)) }
+    - name: outbox_age_p95
+      successCondition: result < 600  # seconds
+      provider: prometheus: { query: histogram_quantile(0.95, sum(rate(outbox_age_seconds_bucket[5m])) by (le)) }
+    - name: consumer_lag_max
+      successCondition: result < 60
+      provider: prometheus: { query: max(kafka_consumergroup_lag) }
+    - name: parity_lag_p95
+      successCondition: result < 300
+      provider: prometheus: { query: histogram_quantile(0.95, sum(rate(parity_lag_seconds_bucket[5m])) by (le)) }
+
+8.2 Rollback rules
+	•	Auto‑abort if any KPI breaches for two consecutive 5‑minute intervals.
+	•	Promotion only after three clean intervals.
+	•	DB migrations follow expand/contract with feature flags; destructive ops disallowed without explicit gate.
+
+⸻
+
+9) Observability (signals, dashboards, policy)
+	•	SLIs/SLOs per route and pipeline: see §0 Targets.
+	•	Dashboards: golden signals per service, canary dashboard, and parity/lag overview.
+	•	Trace propagation: W3C traceparent across Kafka headers; link consumer spans to producer.
+	•	Label policy: templated routes, bounded labels, exemplars for request_id; cardinality budget ≤ 50k series/service.
+	•	Alerting: Burn-rate (2h>14.4, 24h>6) on availability; parity_lag, consumer_lag, outbox_age, DLQ rate.
+
+⸻
+
+10) Scalability & capacity
+	•	Kafka sizing: partitions = ceil(peak_rps/1000) × 2; start at 48 with headroom; ISR rack‑aware; key by hash(tenant:user).
+	•	KEDA autoscaling: scale outbox‑relay on SQL (rows_unpublished, outbox_age_p95), consumers on lag, loader on parity_lag.
+	•	Postgres: PgBouncer transaction pooling; gp3 ≥ 6k IOPS; WAL checkpoint tuning; index bloat control via partition GC.
+	•	Read-path: composite index (user_id, start_ts desc, id desc); optional type specialization if frequently filtered.
+
+⸻
+
+11) Cost & performance targets
+
+Perf:
+	•	Create p95 ≤ 200 ms; List p95 ≤ 1 s; outbox publish ≥ 1k msg/s per relay (with inflight=5 and acks≈10ms).
+	•	Recovery: clear 1.8M‑row backlog from a 30‑min outage at ≥ 300k rows/min using 8 workers.
+
+Cost:
+	•	Kafka storage/egress −60–70% via Avro/Protobuf + Zstd; JSON payloads trimmed.
+	•	OLTP live storage capped: outbox hot ≤ 7 days with partition drop; archive to object store.
+	•	Edge caching on insights (TTL 30–60 s) to reduce origin egress by 70–90% for those endpoints.
+
+⸻
+
+12) Rollout plan & RACI
+
+12.1 Phased rollout (relative weeks)
+	•	W1–W2: Idempotency + pagination + error matrix in API; add composite indexes; ship Schema Registry; enable producer compression.
+	•	W2–W3: RLS WITH CHECK everywhere; enable RLS on outbox; email_hash backfill + concurrent unique index.
+	•	W3–W4: Outbox relay sharding + SKIP LOCKED; KEDA autoscaling on lag; readiness decoupled from IdP; OTLP TLS/mTLS.
+	•	W4–W5: Parity watermark + auto‑replayer; emit updated/deleted events; insights switch to OLAP.
+	•	W5–W6: Canary gates live for all services; deprecation register + headers; DSAR orchestrator v1.
+
+12.2 RACI (key streams)
+
+Stream	Responsible	Accountable	Consulted	Informed
+Idempotency & API contracts	Backend Eng	API Platform Lead	Security, Mobile	Support, Partners
+RLS, tenancy, email hash	DBA + Security Eng	Head of Platform	Legal	Product
+Outbox relay + KEDA	Backend Platform	SRE Manager	Data Eng	Support
+Schema Registry + events	Data Platform Eng	Head of Data	Service Owners	SRE
+Parity, loader, CDC	Data Eng	Head of Data	Platform	Product
+Progressive delivery	Platform	Director, Platform	SRE, DBA	All Eng
+Telemetry TLS/PII	Observability Eng	CISO	Legal, AppSec	All Eng
+DSAR orchestration	Privacy Eng	DPO	Backend, Data Eng	CS, Legal
+
+
+⸻
+
+13) Prioritized backlog (telemetry + cost)
+	1.	Enable OTLP TLS/mTLS, drop PII attributes; 20% sampling, 100% errors.
+	2.	Kafka producer compression=zstd, Avro/JSON Schema switch; shrink events to essentials.
+	3.	Parity dashboard + alerts (p95≤300s) and outbox age p95 chart; add watermarks.
+	4.	Edge cache for /v1/insights/* with SWR 30–60 s; tenant‑scoped purge keys.
+	5.	DLQ manager with auto‑retry, then quarantine and alert; dwell ≤ 7 days.
+	6.	Cost dashboards per tenant: OLAP bytes scanned/day, Kafka produce rate, OLTP rows/day; budgets + throttles.
+
+⸻
+
+14) Review checkpoints (template for similar systems)
+	•	Contracts: idempotency, cursor, error matrix, rate‑limit headers, deprecation register exists.
+	•	Security: RLS USING+WITH CHECK on all tenant tables; FORCE RLS; tenancy wrapper via `set_config('app.tenant_id',...)`; TLS/mTLS for OTLP/Kafka.
+	•	Resilience: readiness excludes optional deps; KEDA on lag/depth; SPOFs removed; kill‑switches exist.
+	•	Eventing: registry gates CI; updated/deleted events; consumer idempotency atomic; DLQ policy and MTTR.
+	•	Parity: parity_lag_p95 dashboard; reconcile topic; auto‑replayer runbook.
+	•	FinOps: compression on; retention tuned; outbox TTL+partitions; per‑tenant quotas; edge cache where safe.
+	•	Progressive delivery: canary metrics wired; auto‑abort rules; DB expand/contract playbook documented.
+
+⸻
+
+15) Sequences (mermaid)
+
+15.1 Create Activity (idempotent, end‑to‑end)
+
+sequenceDiagram
+  autonumber
+  participant C as Client
+  participant GW as api-gateway
+  participant ACT as activity-svc
+  participant PG as Postgres
+  participant OB as Outbox
+  participant OR as Outbox Relay
+  participant K as Kafka
+  participant OL as olap-loader
+  participant CH as OLAP
+
+  C->>GW: POST /v1/activities (Idempotency-Key: k)
+  GW->>ACT: forward
+  ACT->>PG: BEGIN
+  ACT->>PG: INSERT activities (..., idempotency_key=k)
+  ACT->>PG: INSERT outbox (..., dedupe_key=k)
+  PG-->>ACT: COMMIT
+  ACT-->>C: 202 {activity_id, status:"pending"}
+  OR->>OB: SELECT ... FOR UPDATE SKIP LOCKED LIMIT N
+  OR->>K: produce(activity.created, zstd, inflight=5)
+  OR->>OB: UPDATE published_at=now()
+  K->>OL: consume
+  OL->>CH: MERGE fact_activity (idempotent)
+  C->>GW: GET /v1/activities/{id}
+  GW->>ACT: fetch
+  ACT-->>C: 200 {processing_state:"synced"}
+
+15.2 DSAR delete (end‑to‑end)
+
+sequenceDiagram
+  participant CS as Customer Support
+  participant PRIV as Privacy Orchestrator
+  participant ACT as activity-svc
+  participant PG as Postgres
+  participant OR as Outbox Relay
+  participant K as Kafka
+  participant OL as olap-loader
+  participant CH as OLAP
+  participant DG as Dgraph (gated)
+
+  CS->>PRIV: submit DSAR delete(user)
+  PRIV->>ACT: DELETE /v1/users/{id} (hard delete per policy)
+  ACT->>PG: delete + tombstone enqueue {event: user.deleted}
+  OR->>K: publish user.deleted
+  K->>OL: consume tombstone
+  OL->>CH: retract/rollup user rows
+  PRIV->>DG: purge edges (if enabled)
+  PRIV->>Caches: purge keys (tenant:user)
+  PRIV-->>CS: complete with audit log
+
+15.3 Canary rollout (guarded)
+
+sequenceDiagram
+  participant CD as CD System (Argo)
+  participant SVC as activity-svc
+  participant MON as Observability
+  CD->>SVC: deploy 5%
+  MON-->>CD: metrics ok (latency, 5xx, outbox_age_p95, lag, parity_lag)
+  CD->>SVC: promote 25%→50%→100%
+  alt breach
+    MON-->>CD: parity_lag_p95>300s 2x
+    CD->>SVC: rollback to last-good digest
+  end
+
+
+⸻
+
+16) Readiness & config
+	•	/healthz remains liveness; /readyz checks only hard deps (DB, config).
+	•	/depz optional extended dependency check (Kafka, IdP, OLAP) for dashboards; never gates traffic.
+	•	Add auth.external_offline_grace circuit breaker: verify tokens against cached JWK for a grace window; alert if grace active.
+
+⸻
+
+17) Appendices
+	•	Runbooks: backlog replay, DLQ quarantine and replay, parity breach triage, canary failure.
+	•	Checklists: migration expand/contract steps; emergency change window exception.
+	•	Open items: choose Avro vs JSON Schema; finalize OLAP engine; confirm retention per tenant/region.

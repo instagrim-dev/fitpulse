@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExerciseUpserted",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "exercise_id",
+    "name",
+    "updated_at"
+  ],
+  "properties": {
+    "exercise_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "difficulty": {
+      "type": ["string", "null"]
+    },
+    "targets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "requires": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "contraindications": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "complementary_to": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tenant_id": {
+      "type": ["string", "null"],
+      "format": "uuid"
+    }
+  }
+}
