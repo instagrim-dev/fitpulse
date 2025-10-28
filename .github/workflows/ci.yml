@@ -23,9 +23,7 @@ jobs:
           node-version: '24.7.0'
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.19.0
+        run: corepack prepare pnpm@10.19.0 --activate
 
       - name: Install Task
         uses: go-task/setup-task@v1
