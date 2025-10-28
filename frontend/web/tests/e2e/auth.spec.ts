@@ -20,7 +20,33 @@ const refreshedToken = {
   tenant_id: 'tenant-demo',
 };
 
+const defaultMetricsResponse = {
+  summary: {
+    total: 0,
+    pending: 0,
+    synced: 0,
+    failed: 0,
+    average_duration_minutes: 0,
+    average_processing_seconds: 0,
+    oldest_pending_age_seconds: 0,
+    success_rate: 0,
+  },
+  timeline: [],
+  timeline_limit: 6,
+  window_seconds: 86_400,
+};
+
 test.describe('Authentication workflow', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/v1/activities/metrics?**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(defaultMetricsResponse),
+      });
+    });
+  });
+
   test('requests and refreshes tokens automatically', async ({ page }) => {
     await page.addInitScript(({ key }) => {
       window.localStorage.removeItem(key);

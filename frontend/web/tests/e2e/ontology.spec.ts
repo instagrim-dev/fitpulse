@@ -67,6 +67,28 @@ test.describe('Ontology insights', () => {
         body: JSON.stringify({ id: 'squat-2' }),
       });
     });
+
+    await page.route('**/v1/activities/metrics?**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          summary: {
+            total: 0,
+            pending: 0,
+            synced: 0,
+            failed: 0,
+            average_duration_minutes: 0,
+            average_processing_seconds: 0,
+            oldest_pending_age_seconds: 0,
+            success_rate: 0,
+          },
+          timeline: [],
+          timeline_limit: 6,
+          window_seconds: 86_400,
+        }),
+      });
+    });
   });
 
   test('shows insights and search results', async ({ page }) => {
