@@ -47,7 +47,12 @@ tasks:
   docs:lint:
     desc: Lint OpenAPI specifications
     cmds:
-      - docker run --rm -v "$PWD/docs/API":/workspace -w /workspace --entrypoint sh stoplight/spectral:latest -c "for spec in *.yaml; do [ \"$spec\" = \".spectral.yaml\" ] && continue; spectral lint \"$spec\"; done"
+      - |
+        docker run --rm \
+          -v "$PWD/docs/API":/workspace \
+          -w /workspace \
+          stoplight/spectral:latest \
+          lint activity-service.yaml identity-service.yaml
 
   docs:identity:
     desc: Build Sphinx docs for identity service
