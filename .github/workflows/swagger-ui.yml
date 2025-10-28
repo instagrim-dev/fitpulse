@@ -31,7 +31,7 @@ jobs:
         with:
           path: swagger-out
 
- deploy:
+  deploy:
     needs: build
     runs-on: ubuntu-24.04
     environment:
