@@ -11,10 +11,12 @@ type DLQWriter struct {
 	pool *pgxpool.Pool
 }
 
+// NewDLQWriter initialises a writer backed by the provided connection pool.
 func NewDLQWriter(pool *pgxpool.Pool) *DLQWriter {
 	return &DLQWriter{pool: pool}
 }
 
+// Write records a failed outbox message in the DLQ alongside the supplied reason.
 func (w *DLQWriter) Write(ctx context.Context, msg Message, reason string) error {
 	conn, err := w.pool.Acquire(ctx)
 	if err != nil {
