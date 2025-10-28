@@ -5,16 +5,20 @@ import { listActivities } from '../api/activity';
 import { ActivityTimeline } from './ActivityTimeline';
 import { EmptyState } from './EmptyState';
 
-/** Props consumed by the `ActivityList` component. */
+/**
+ * Props consumed by {@link ActivityList}.
+ */
 export interface ActivityListProps {
   /** Identifier of the user whose activities should be listed. */
   userId: string;
 }
 
 /**
- * Displays recent activities for the provided user and exposes basic pagination.
- * Fetches data through React Query, ensuring the UI reacts to cache invalidations
- * triggered elsewhere (for example, after submitting a new activity).
+ * Displays recent activities for the provided user and exposes basic pagination controls.
+ * Fetches data through React Query so the UI reacts to cache invalidations triggered
+ * elsewhere (for example, after submitting a new activity).
+ *
+ * @param props - Configuration for the list, including the target `userId`.
  */
 export function ActivityList({ userId }: ActivityListProps) {
   const { token } = useContext(AuthContext);

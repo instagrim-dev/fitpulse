@@ -4,14 +4,23 @@ import { AuthContext } from '../context/AuthContext';
 import { ActivityTimeline } from './ActivityTimeline';
 import { getActivityMetrics, ActivityMetricsResponse } from '../api/activity';
 
+/**
+ * Props accepted by {@link ActivityDashboard}.
+ */
 interface ActivityDashboardProps {
+  /**
+   * Identifier for the user whose metrics and timeline should be rendered.
+   */
   userId: string;
 }
 
 const TIMELINE_LIMIT = 6;
 
 /**
- * Dashboard presenting high-level activity metrics alongside a recent timeline for a user.
+ * Presents high-level metrics and a trimmed timeline for a single user's recent activities,
+ * combining aggregation data with the {@link ActivityTimeline} component.
+ *
+ * @param props - Configuration for the dashboard, including the target `userId`.
  */
 export function ActivityDashboard({ userId }: ActivityDashboardProps) {
   const { token } = useContext(AuthContext);

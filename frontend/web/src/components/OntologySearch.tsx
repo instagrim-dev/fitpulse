@@ -5,14 +5,19 @@ import { searchExercises, upsertExercise } from '../api/ontology';
 import { EmptyState } from './EmptyState';
 
 /**
- * Composite panel for querying the ontology service and quickly adding new exercises.
- * Provides read and write flows side-by-side so operator workflows stay in one view.
+ * Props accepted by {@link OntologySearch}.
  */
 interface OntologySearchProps {
   query: string;
   onQueryChange: (value: string) => void;
 }
 
+/**
+ * Composite panel for querying the ontology service and quickly adding new exercises.
+ * Provides read and write flows side-by-side so operator workflows stay in one view.
+ *
+ * @param props - Configuration for the search form, including the current query and setter.
+ */
 export function OntologySearch({ query, onQueryChange }: OntologySearchProps) {
   const { token } = useContext(AuthContext);
   const [newExercise, setNewExercise] = useState({ name: '', difficulty: '', targets: '' });

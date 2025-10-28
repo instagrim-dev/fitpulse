@@ -12,6 +12,9 @@ export default defineConfig({
     baseURL: 'http://127.0.0.1:5173',
     trace: 'on-first-retry',
     viewport: { width: 1280, height: 720 },
+    launchOptions: {
+      args: ['--disable-gpu', '--use-gl=swiftshader', '--no-sandbox', '--disable-dev-shm-usage'],
+    },
   },
   projects: [
     {

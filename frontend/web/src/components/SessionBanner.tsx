@@ -1,3 +1,6 @@
+/**
+ * Props accepted by {@link SessionBanner}.
+ */
 interface SessionBannerProps {
   variant: 'warning' | 'error';
   message: string;
@@ -5,6 +8,11 @@ interface SessionBannerProps {
   secondaryAction?: { label: string; onClick: () => void; disabled?: boolean };
 }
 
+/**
+ * Presents a session status banner with optional primary and secondary actions to nudge the operator.
+ *
+ * @param props - Content and action handlers used to render the banner.
+ */
 export function SessionBanner({ variant, message, primaryAction, secondaryAction }: SessionBannerProps) {
   return (
     <div className={`session-banner session-banner--${variant}`} role={variant === 'error' ? 'alert' : 'status'}>

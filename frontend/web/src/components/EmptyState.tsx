@@ -1,3 +1,6 @@
+/**
+ * Props accepted by {@link EmptyState}.
+ */
 interface EmptyStateProps {
   title: string;
   description?: string;
@@ -7,6 +10,11 @@ interface EmptyStateProps {
   actionDisabled?: boolean;
 }
 
+/**
+ * Presents a small empty/error panel with optional primary action for recovery flows.
+ *
+ * @param props - Content and behaviour configuration for the empty state.
+ */
 export function EmptyState({
   title,
   description,

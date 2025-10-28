@@ -8,13 +8,22 @@ import {
   CreateActivityPayload,
 } from '../api/activity';
 
+/**
+ * Props accepted by {@link ActivityForm}.
+ */
 export interface ActivityFormProps {
+  /**
+   * Identifier of the user for whom new activities should be created.
+   */
   userId: string;
 }
 
 /**
- * Form for submitting new activities to the backend for a specific user. The component
- * invalidates the cached activity query on success so the list refreshes automatically.
+ * Form for submitting new activities to the backend for a specific user.
+ * The component invalidates cached activity queries upon success so downstream
+ * lists refresh automatically.
+ *
+ * @param props - Configuration for the form, namely the target `userId`.
  */
 export function ActivityForm({ userId }: ActivityFormProps) {
   const { token } = useContext(AuthContext);

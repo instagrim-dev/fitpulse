@@ -3,10 +3,22 @@ import { AuthContext } from '../context/AuthContext';
 import { useContext } from 'react';
 import { searchExercises } from '../api/ontology';
 
+/**
+ * Props accepted by {@link OntologyInsights}.
+ */
 interface OntologyInsightsProps {
+  /**
+   * Search query to snapshot; used for cache keying and lookups.
+   */
   query: string;
 }
 
+/**
+ * Displays a lightweight panel summarising the top ontology results for the supplied query.
+ * Hidden when the user is unauthenticated to avoid misleading empty states.
+ *
+ * @param props - Configuration for the insights panel, including the current query string.
+ */
 export function OntologyInsights({ query }: OntologyInsightsProps) {
   const { token } = useContext(AuthContext);
   const { data, isLoading } = useQuery({

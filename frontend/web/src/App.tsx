@@ -18,6 +18,8 @@ const STORAGE_KEY = 'i5e-auth';
 /**
  * Root application shell combining auth controls with activity and ontology panels.
  * Maintains tenant and token state that downstream components consume via context.
+ *
+ * @returns The fully composed application layout.
  */
 export default function App() {
   const [token, setToken] = useState('');

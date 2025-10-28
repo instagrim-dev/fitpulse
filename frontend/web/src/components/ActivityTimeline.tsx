@@ -3,6 +3,9 @@ import type { ActivityItem } from '../api/activity';
 
 type TimelineStatus = 'pending' | 'synced' | 'failed' | 'other';
 
+/**
+ * Props accepted by {@link ActivityTimeline}.
+ */
 interface ActivityTimelineProps {
   /** Activities to display in the timeline, ordered newest-first. */
   items?: ActivityItem[];
@@ -82,6 +85,12 @@ function normaliseVersion(version: string) {
   return trimmed.toLowerCase().startsWith('v') ? trimmed : `v${trimmed}`;
 }
 
+/**
+ * Renders a vertical timeline of activity items with derived metadata such as status badges,
+ * optimistic markers, and relative timestamps.
+ *
+ * @param props - Rendering configuration, including activity items and loading state.
+ */
 export function ActivityTimeline({
   items = [],
   isLoading = false,

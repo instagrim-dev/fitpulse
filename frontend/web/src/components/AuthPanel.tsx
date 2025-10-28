@@ -4,7 +4,9 @@ import { trackEvent } from '../telemetry/logger';
 
 const DEFAULT_SCOPES = ['activities:write', 'activities:read', 'ontology:read'];
 
-/** View-model properties used by `AuthPanel`. */
+/**
+ * Props accepted by {@link AuthPanel}.
+ */
 interface Props {
   /** Current tenant identifier propagated to downstream requests. */
   tenantId: string;
@@ -47,6 +49,8 @@ type TokenStatus = 'idle' | 'pending' | 'success' | 'error';
  * Authentication panel that can request JWTs from the identity service or accept manual tokens.
  * The component also exposes knobs for persisting credentials in local storage for convenient
  * operator workflows.
+ *
+ * @param props - Configuration and callbacks governing token issuance and persistence.
  */
 export function AuthPanel({
   tenantId,
