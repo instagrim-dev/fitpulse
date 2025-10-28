@@ -79,9 +79,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24.7.0'
       - name: Setup pnpm
-        run: corepack prepare pnpm@10.19.0 --activate
+        run: |
+          corepack enable pnpm
+          corepack prepare pnpm@10.19.0 --activate
       - name: Install dependencies
         working-directory: frontend/web
         run: pnpm install --frozen-lockfile
