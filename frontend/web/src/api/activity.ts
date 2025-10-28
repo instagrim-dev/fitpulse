@@ -118,6 +118,9 @@ export async function listActivities(token: string, userId: string, cursor?: str
   return (await resp.json()) as ActivityListResponse;
 }
 
+/**
+ * Optional overrides accepted by {@link getActivityMetrics}.
+ */
 interface MetricsOptions {
   timelineLimit?: number;
   windowHours?: number;

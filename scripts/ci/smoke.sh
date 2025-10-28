@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/infrastructure/compose/docker-compose.yml"
 COMPOSE_CMD=(docker compose -f "$COMPOSE_FILE")
 
@@ -28,7 +29,8 @@ SMOKE_SERVICES=(
   activity-dlq-manager
 )
 
-. "$ROOT_DIR/scripts/lib/wait.sh"
+# shellcheck source=../lib/wait.sh disable=SC1091
+. "$SCRIPT_DIR/../lib/wait.sh"
 
 echo "[smoke] bringing up services: ${SMOKE_SERVICES[*]}"
 "${COMPOSE_CMD[@]}" up --quiet-pull --build -d "${SMOKE_SERVICES[@]}"

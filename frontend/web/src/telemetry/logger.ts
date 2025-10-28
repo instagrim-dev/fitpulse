@@ -1,3 +1,6 @@
+/**
+ * Envelope describing a telemetry event dispatched by the frontend.
+ */
 export interface TelemetryEvent {
   name: string;
   timestamp: string;
@@ -7,6 +10,11 @@ export interface TelemetryEvent {
 const endpoint = import.meta.env.VITE_TELEMETRY_URL ?? '';
 const enabled = (import.meta.env.VITE_ENABLE_TELEMETRY ?? 'false').toLowerCase() === 'true';
 
+/**
+ * Dispatch the supplied telemetry event to the configured endpoint (or console in dev).
+ *
+ * @param event - Fully populated telemetry payload.
+ */
 function sendEvent(event: TelemetryEvent) {
   if (!enabled) {
     if (import.meta.env.DEV) {
@@ -38,6 +46,13 @@ function sendEvent(event: TelemetryEvent) {
   }
 }
 
+/**
+ * Capture a telemetry event with optional structured properties. Events are routed to the
+ * configured endpoint when telemetry is enabled, or logged to the console during development.
+ *
+ * @param name - Unique name describing the event (e.g., `auth.token.refresh.success`).
+ * @param properties - Optional contextual metadata to include alongside the event.
+ */
 export function trackEvent(name: string, properties?: Record<string, unknown>) {
   const event: TelemetryEvent = {
     name,

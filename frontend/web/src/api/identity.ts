@@ -41,6 +41,13 @@ export interface RefreshTokenPayload {
   scopes?: string[];
 }
 
+/**
+ * Exchange a refresh token for a new access/refresh pair, optionally overriding requested scopes.
+ *
+ * @param payload - Refresh token details, including the token string and optional scopes.
+ * @returns A freshly minted {@link TokenResponse}.
+ * @throws Error when the identity service returns a non-2xx status code.
+ */
 export async function refreshAccessToken(payload: RefreshTokenPayload): Promise<TokenResponse> {
   const resp = await fetch(`${IDENTITY_API_URL}/v1/token/refresh`, {
     method: 'POST',

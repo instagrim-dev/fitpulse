@@ -59,6 +59,11 @@ tasks:
     cmds:
       - docker run --rm -v "$PWD":/workspace -w /workspace/services/identity-service python:3.11-slim sh -c "pip install --no-cache-dir .[dev] && sphinx-build -b html docs docs/_build/html"
 
+  lint:shell:
+    desc: Lint shell scripts with ShellCheck
+    cmds:
+      - ./scripts/ci/lint_shell.sh
+
   web:install:
     desc: Install frontend dependencies
     dir: frontend/web
