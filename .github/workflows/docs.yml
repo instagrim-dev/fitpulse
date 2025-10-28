@@ -17,9 +17,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24.7.0'
+          cache: 'pnpm'
 
       - name: Install pnpm
-        run: corepack enable pnpm
+        run: |
+          corepack enable pnpm
+          corepack prepare pnpm@10.19.0 --activate
 
       - name: Install frontend dependencies
         working-directory: frontend/web
