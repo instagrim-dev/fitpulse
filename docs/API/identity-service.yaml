@@ -207,8 +207,6 @@ paths:
           description: Unauthorized
         '429':
           description: Rate limited
-        '429':
-          description: Rate limited
   /v1/accounts/{account_id}:
     get:
       summary: Get account by ID
