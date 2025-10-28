@@ -6,7 +6,7 @@ import hashlib
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Iterable, Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from psycopg.rows import tuple_row
 from psycopg_pool import ConnectionPool
