@@ -40,7 +40,7 @@ func (h *Handler) exercises(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		h.searchExercises(w, r)
 	case http.MethodPost:
-		h.upsertExercise(w, r)
+		h.createExercise(w, r)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "unsupported method")
 	}
@@ -52,20 +52,53 @@ func (h *Handler) exerciseByID(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "missing bearer token")
 		return
 	}
-	if !claims.HasScope(auth.ScopeOntologyRead) && !claims.HasScope(auth.ScopeOntologyWrite) {
-		writeError(w, http.StatusForbidden, "forbidden", "scope ontology:read required")
-		return
-	}
 
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "unsupported method")
-		return
-	}
-	id := strings.TrimPrefix(r.URL.Path, "/v1/exercises/")
+	path := strings.TrimPrefix(r.URL.Path, "/v1/exercises/")
+	segments := strings.Split(path, "/")
+	id := segments[0]
 	if strings.TrimSpace(id) == "" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "missing exercise id")
 		return
 	}
+
+	if len(segments) > 1 && segments[1] == "relationships" {
+		if r.Method != http.MethodPut {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "unsupported method")
+			return
+		}
+		if !claims.HasScope(auth.ScopeOntologyWrite) {
+			writeError(w, http.StatusForbidden, "forbidden", "scope ontology:write required")
+			return
+		}
+		h.updateRelationships(w, r, id)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		if !claims.HasScope(auth.ScopeOntologyRead) && !claims.HasScope(auth.ScopeOntologyWrite) {
+			writeError(w, http.StatusForbidden, "forbidden", "scope ontology:read required")
+			return
+		}
+		h.getExercise(w, r, id)
+	case http.MethodPut:
+		if !claims.HasScope(auth.ScopeOntologyWrite) {
+			writeError(w, http.StatusForbidden, "forbidden", "scope ontology:write required")
+			return
+		}
+		h.updateExercise(w, r, id)
+	case http.MethodDelete:
+		if !claims.HasScope(auth.ScopeOntologyWrite) {
+			writeError(w, http.StatusForbidden, "forbidden", "scope ontology:write required")
+			return
+		}
+		h.deleteExercise(w, r, id)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "unsupported method")
+	}
+}
+
+func (h *Handler) getExercise(w http.ResponseWriter, r *http.Request, id string) {
 
 	exercise, err := h.service.GetExercise(r.Context(), id)
 	if err != nil {
@@ -106,7 +139,7 @@ func (h *Handler) searchExercises(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": exercises})
 }
 
-func (h *Handler) upsertExercise(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) createExercise(w http.ResponseWriter, r *http.Request) {
 	claims, ok := auth.FromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "missing bearer token")
@@ -117,7 +150,7 @@ func (h *Handler) upsertExercise(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req UpsertExerciseRequest
+	var req ExerciseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "unable to parse body")
 		return
@@ -137,17 +170,86 @@ func (h *Handler) upsertExercise(w http.ResponseWriter, r *http.Request) {
 		ComplementaryTo:   req.ComplementaryTo,
 	}
 
-    updated, err := h.service.UpsertExercise(r.Context(), exercise)
-    if err != nil {
-        writeError(w, http.StatusInternalServerError, "server_error", err.Error())
-        return
-    }
+	created, err := h.service.UpsertExercise(r.Context(), exercise)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "server_error", err.Error())
+		return
+	}
 
-    writeJSON(w, http.StatusOK, map[string]any{"exercise": updated})
+	writeJSON(w, http.StatusCreated, map[string]any{"exercise": created})
 }
 
-// UpsertExerciseRequest represents the request payload.
-type UpsertExerciseRequest struct {
+func (h *Handler) updateExercise(w http.ResponseWriter, r *http.Request, id string) {
+	var req ExerciseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "unable to parse body")
+		return
+	}
+	if req.ID != "" && req.ID != id {
+		writeError(w, http.StatusBadRequest, "validation_failed", "exercise id mismatch")
+		return
+	}
+	req.ID = id
+	if err := req.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+		return
+	}
+
+	exercise := domain.Exercise{
+		ID:                req.ID,
+		Name:              req.Name,
+		Difficulty:        req.Difficulty,
+		Targets:           req.Targets,
+		Requires:          req.Requires,
+		Contraindications: req.Contraindications,
+		ComplementaryTo:   req.ComplementaryTo,
+	}
+
+	updated, err := h.service.UpsertExercise(r.Context(), exercise)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "server_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"exercise": updated})
+}
+
+func (h *Handler) deleteExercise(w http.ResponseWriter, r *http.Request, id string) {
+	if err := h.service.DeleteExercise(r.Context(), id); err != nil {
+		if errors.Is(err, domain.ErrExerciseNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "exercise not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "server_error", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) updateRelationships(w http.ResponseWriter, r *http.Request, id string) {
+	var req RelationshipsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "unable to parse body")
+		return
+	}
+	updated, err := h.service.UpdateRelationships(r.Context(), id, domain.ExerciseRelationships{
+		Targets:           req.Targets,
+		ComplementaryTo:   req.ComplementaryTo,
+		Contraindications: req.ContraindicatedWith,
+	})
+	if err != nil {
+		if errors.Is(err, domain.ErrExerciseNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "exercise not found")
+			return
+		}
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"exercise": updated})
+}
+
+// ExerciseRequest represents the request payload.
+type ExerciseRequest struct {
 	ID                string   `json:"id"`
 	Name              string   `json:"name"`
 	Difficulty        string   `json:"difficulty"`
@@ -158,11 +260,18 @@ type UpsertExerciseRequest struct {
 }
 
 // Validate ensures request integrity.
-func (r UpsertExerciseRequest) Validate() error {
+func (r ExerciseRequest) Validate() error {
 	if strings.TrimSpace(r.Name) == "" {
 		return errors.New("name is required")
 	}
 	return nil
+}
+
+// RelationshipsRequest describes relationship updates.
+type RelationshipsRequest struct {
+	Targets             []string `json:"targets"`
+	ComplementaryTo     []string `json:"complementary_to"`
+	ContraindicatedWith []string `json:"contraindicated_with"`
 }
 
 func writeError(w http.ResponseWriter, status int, code, detail string) {

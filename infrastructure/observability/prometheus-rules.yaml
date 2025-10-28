@@ -1,0 +1,27 @@
+groups:
+  - name: activity-service
+    rules:
+      - alert: ActivityConsumerStalled
+        expr: time() - activity_service_consumer_last_message_timestamp_seconds > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Activity consumer has not processed messages for 5 minutes
+          description: "The activity consumer appears stalled. Investigate Kafka connectivity or DLQ backlog."
+      - alert: ActivityDLQDepthHigh
+        expr: activity_service_dlq_queued_messages > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: DLQ backlog exceeds threshold
+          description: "DLQ has more than 100 pending messages for over 10 minutes. Check DLQ manager logs."
+      - alert: ActivityDLQQuarantineDetected
+        expr: increase(activity_service_dlq_messages_quarantined_total[15m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: DLQ entries quarantined
+          description: "At least one DLQ entry was quarantined in the last 15 minutes. Manual intervention likely required."

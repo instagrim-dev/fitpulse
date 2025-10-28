@@ -2,20 +2,26 @@ import { useContext, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { AuthContext } from '../context/AuthContext';
 import { searchExercises, upsertExercise } from '../api/ontology';
+import { EmptyState } from './EmptyState';
 
 /**
  * Composite panel for querying the ontology service and quickly adding new exercises.
  * Provides read and write flows side-by-side so operator workflows stay in one view.
  */
-export function OntologySearch() {
+interface OntologySearchProps {
+  query: string;
+  onQueryChange: (value: string) => void;
+}
+
+export function OntologySearch({ query, onQueryChange }: OntologySearchProps) {
   const { token } = useContext(AuthContext);
-  const [query, setQuery] = useState('');
   const [newExercise, setNewExercise] = useState({ name: '', difficulty: '', targets: '' });
 
-  const { data, isFetching, refetch } = useQuery({
-    queryKey: ['ontology', query],
+  const { data, isFetching, isError, refetch } = useQuery({
+    queryKey: ['ontology', token, query],
     enabled: !!token,
     queryFn: () => searchExercises(token, query),
+    retry: false,
   });
 
   const upsertMutation = useMutation({
@@ -31,6 +37,10 @@ export function OntologySearch() {
     },
   });
 
+  const searchDisabled = !token;
+  const searching = isFetching && !!token;
+  const hasResults = (data?.items?.length ?? 0) > 0;
+
   return (
     <section className="panel">
       <h2>Exercise Ontology</h2>
@@ -40,24 +50,48 @@ export function OntologySearch() {
             Search term
             <input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => onQueryChange(e.target.value)}
               placeholder="e.g. squat"
-              disabled={!token}
+              disabled={searchDisabled}
             />
           </label>
-          <button onClick={() => refetch()} disabled={!token || isFetching}>
-            {isFetching ? 'Searching…' : 'Search'}
+          <button onClick={() => refetch()} disabled={searchDisabled || searching}>
+            {searching ? 'Searching…' : 'Search'}
           </button>
-          <ul className="list">
-            {data?.items.map((ex) => (
-              <li key={ex.id}>
-                <strong>{ex.name}</strong> — {ex.difficulty || 'n/a'}
-                {ex.targets && ex.targets.length > 0 && (
-                  <div className="meta">targets: {ex.targets.join(', ')}</div>
-                )}
-              </li>
-            ))}
-          </ul>
+          {!token && (
+            <EmptyState
+              title="Authentication required"
+              description="Provide an ontology read token to browse exercises."
+            />
+          )}
+          {token && isError && (
+            <EmptyState
+              variant="error"
+              title="Unable to fetch ontology results."
+              description="The ontology service may be unavailable. Retry the search shortly."
+              actionLabel={searching ? 'Retrying…' : 'Retry search'}
+              onAction={() => refetch()}
+              actionDisabled={searching}
+            />
+          )}
+          {token && !isError && !hasResults && !searching && (
+            <EmptyState
+              title="No exercises found"
+              description="Try adjusting your search term or create a new exercise using the form."
+            />
+          )}
+          {token && hasResults && (
+            <ul className="list">
+              {data?.items.map((ex) => (
+                <li key={ex.id}>
+                  <strong>{ex.name}</strong> — {ex.difficulty || 'n/a'}
+                  {ex.targets && ex.targets.length > 0 && (
+                    <div className="meta">targets: {ex.targets.join(', ')}</div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <div>
           <h3>Add Exercise</h3>
@@ -73,6 +107,7 @@ export function OntologySearch() {
                 value={newExercise.name}
                 onChange={(e) => setNewExercise((prev) => ({ ...prev, name: e.target.value }))}
                 required
+                disabled={!token}
               />
             </label>
             <label>
@@ -80,6 +115,7 @@ export function OntologySearch() {
               <input
                 value={newExercise.difficulty}
                 onChange={(e) => setNewExercise((prev) => ({ ...prev, difficulty: e.target.value }))}
+                disabled={!token}
               />
             </label>
             <label>
@@ -87,6 +123,7 @@ export function OntologySearch() {
               <input
                 value={newExercise.targets}
                 onChange={(e) => setNewExercise((prev) => ({ ...prev, targets: e.target.value }))}
+                disabled={!token}
               />
             </label>
             <button type="submit" disabled={!token || upsertMutation.isPending}>

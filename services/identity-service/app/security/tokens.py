@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import secrets
 import time
 from typing import Any
 
@@ -73,3 +75,14 @@ def decode_access_token(token: str) -> dict[str, Any]:
         audience=None,
         issuer=settings.jwt_issuer,
     )
+
+
+def generate_refresh_token() -> tuple[str, str]:
+    """Generate a refresh token string and its SHA-256 hash."""
+    token = secrets.token_urlsafe(48)
+    return token, hash_refresh_token(token)
+
+
+def hash_refresh_token(token: str) -> str:
+    """Return the SHA-256 hex digest for a refresh token string."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()

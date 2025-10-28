@@ -12,9 +12,9 @@ import (
 
 // DLQManager handles retrying failed outbox messages and quarantining exhausted entries.
 type DLQManager struct {
-    pool       *pgxpool.Pool
-    maxRetries int
-    baseDelay  time.Duration
+	pool       *pgxpool.Pool
+	maxRetries int
+	baseDelay  time.Duration
 }
 
 // NewDLQManager constructs a DLQManager with the provided pool and retry configuration.
@@ -31,6 +31,8 @@ func NewDLQManager(pool *pgxpool.Pool, maxRetries int, baseDelay time.Duration) 
 // RunOnce processes a batch of DLQ entries and returns the count of successfully
 // re-queued messages.
 func (m *DLQManager) RunOnce(ctx context.Context, batchSize int) (int, error) {
+	updateBacklogGauge(ctx, m.pool)
+
 	const query = `SELECT dlq_id, tenant_id, event_id, event_type, topic, payload, reason, aggregate_type, aggregate_id, schema_subject, partition_key, retry_count
                     FROM outbox_dlq
                    WHERE quarantined_at IS NULL AND (next_retry_at IS NULL OR next_retry_at <= NOW())
@@ -84,39 +86,52 @@ func (m *DLQManager) handleEntry(ctx context.Context, entry dlqEntry) error {
 		if _, err := tx.Exec(ctx, `UPDATE outbox_dlq SET quarantined_at = NOW(), quarantine_reason = $1 WHERE dlq_id = $2`, "retry limit reached", entry.ID); err != nil {
 			return err
 		}
-		return tx.Commit(ctx)
+		if err := tx.Commit(ctx); err != nil {
+			return err
+		}
+		recordDLQQuarantined(entry)
+		return nil
 	}
 
 	insertErr := requeueOutbox(ctx, tx, entry)
 	if insertErr != nil {
-        delay := m.backoffDelay(entry.RetryCount + 1)
-        if _, err := tx.Exec(ctx,
-            `UPDATE outbox_dlq
+		delay := m.backoffDelay(entry.RetryCount + 1)
+		if _, err := tx.Exec(ctx,
+			`UPDATE outbox_dlq
                SET retry_count = retry_count + 1,
                    last_attempt_at = NOW(),
                    next_retry_at = NOW() + $1::interval,
                    reason = $2
              WHERE dlq_id = $3`,
-            delay, insertErr.Error(), entry.ID,
-        ); err != nil {
-            return err
-        }
-		return tx.Commit(ctx)
+			delay, insertErr.Error(), entry.ID,
+		); err != nil {
+			return err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return err
+		}
+		recordDLQRetry(entry)
+		return nil
 	}
 
 	if _, err := tx.Exec(ctx, `DELETE FROM outbox_dlq WHERE dlq_id = $1`, entry.ID); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	recordDLQProcessed(entry)
+	recordDLQRequeued(entry)
+	return nil
 }
 
 // backoffDelay calculates exponential backoff capped at one hour.
 func (m *DLQManager) backoffDelay(attempt int) time.Duration {
-    delay := time.Duration(1<<uint(attempt-1)) * m.baseDelay
-    if delay > time.Hour {
-        delay = time.Hour
-    }
-    return delay
+	delay := time.Duration(1<<uint(attempt-1)) * m.baseDelay
+	if delay > time.Hour {
+		delay = time.Hour
+	}
+	return delay
 }
 
 // requeueOutbox reinserts the payload into the primary outbox table for replay.

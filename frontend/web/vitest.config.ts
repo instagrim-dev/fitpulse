@@ -5,6 +5,8 @@ export default mergeConfig(viteConfig, defineConfig({
   test: {
     environment: 'happy-dom',
     globals: true,
-    setupFiles: './vitest.setup.ts'
+    setupFiles: './vitest.setup.ts',
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    exclude: ['node_modules/**', 'dist/**', 'tests/e2e/**'],
   },
 }));

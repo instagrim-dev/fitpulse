@@ -20,6 +20,7 @@ class Settings:
     jwt_secret: str = os.getenv("JWT_SECRET", "dev-secret-change-me")
     jwt_issuer: str = os.getenv("JWT_ISSUER", "i5e.identity")
     jwt_ttl_seconds: int = int(os.getenv("JWT_TTL_SECONDS", "3600"))
+    refresh_ttl_seconds: int = int(os.getenv("REFRESH_TTL_SECONDS", "86400"))
     rate_limit_requests: int = int(os.getenv("RATE_LIMIT_REQUESTS", "20"))
     rate_limit_window_seconds: int = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
     rate_limit_backend: str = os.getenv("RATE_LIMIT_BACKEND", "memory").lower()

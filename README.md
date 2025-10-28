@@ -20,7 +20,9 @@ A three-service platform for tenant-aware identity, reliable activity ingestion,
 
 - **Identity Service (FastAPI)** — issues signed JWTs with tenant scopes, manages account creation with Postgres row-level security (RLS) and idempotency.
 - **Activity Service (Go)** — authoritative activity store; writes to Postgres and publishes Kafka events through a transactional outbox with DLQ handling and Prometheus metrics.
+- **Activity Consumer (Go)** — Kafka consumer that persists delivered events to an audit log and drives DLQ replay automation.
 - **Exercise Ontology & Search (Go)** — synchronises exercise taxonomy in Dgraph, consumes activity events, exposes REST/GraphQL search.
+- **Exercise Ontology Consumer (Go)** — Kafka listener updating ontology metrics and laying groundwork for enrichment.
 - **Shared Infrastructure** — Postgres 16, Kafka + Schema Registry, Dgraph Alpha, Prometheus scraping endpoints, Swagger UI pipeline.
 
 ```mermaid
@@ -45,7 +47,8 @@ Design decisions, contracts, and rollout plans live in `docs/Design/HLD.md` and 
 
 - Docker Engine + docker-compose plugin
 - Task (installed automatically in CI; locally via `brew install go-task/tap/go-task` or manual download)
-- `corepack enable pnpm` (Node.js ≥20 recommended)
+- Node.js 24.x (see `.nvmrc` / `.node-version`) with pnpm 10.19 (run `corepack use pnpm@10.19.0`)
+- Playwright browser binaries (`pnpm exec playwright install --with-deps`) for E2E tests.
 - Optional: VS Code Dev Containers for a prebuilt toolchain (`.devcontainer/devcontainer.json`)
 
 ### Editor IntelliSense
@@ -74,8 +77,20 @@ task docs:identity    # Build Sphinx docs for identity service (HTML in services
 task web:install
 task web:test
 pnpm run lint      # ESLint with TSDoc validation
+pnpm test          # Vitest single-run suite
+pnpm test:watch    # Vitest watch mode for local dev
+pnpm test:e2e      # Playwright E2E covering dashboard replay flow
 pnpm run docs      # Generate HTML docs (output in frontend/web/typedoc)
 ```
+
+Key frontend environment variables (set via `.env` or `vite` inline):
+
+- `VITE_ACTIVITY_API_URL` (default `http://localhost:8080`)
+- `VITE_ONTOLOGY_API_URL` (default `http://localhost:8090`)
+- `VITE_IDENTITY_API_URL` (default `http://localhost:8000`)
+- `VITE_DEFAULT_USER_ID` (default `user-1`)
+- `VITE_ENABLE_TELEMETRY` (`true` to emit telemetry events, default `false`)
+- `VITE_TELEMETRY_URL` (endpoint consumed when telemetry is enabled)
 
 To iterate on the frontend:
 ```bash
@@ -91,6 +106,7 @@ The dev server proxies to docker-compose APIs (override via `.env`).
 - Migrations: `db/postgres/migrations/*.sql` (managed with `migrate/migrate` container in compose).
 - Tests: `task test:python` (3 Musketeers), or `python -m pytest` after `pip install .[dev]` locally.
 - Distributed rate limiting: defaults to in-memory; set `RATE_LIMIT_BACKEND=redis` with `REDIS_URL` to enable shared sliding windows (compose wiring includes a Redis container).
+- Refresh tokens: `/v1/token` responses now include `refresh_token`; rotate via `/v1/token/refresh`. Persistence lives in `refresh_tokens` table with audit entries recorded in `identity_audit_log`. Configure expiry with `REFRESH_TTL_SECONDS` (defaults to 24h).
 
 ### Activity (Go)
 - Uses `pgxpool` with tenant context set via `set_config('app.tenant_id', ...)`.
@@ -102,6 +118,7 @@ The dev server proxies to docker-compose APIs (override via `.env`).
 - Interacts with Dgraph; schema auto-applied from `db/dgraph/schema/exercise.schema` by compose helper.
 - TODOs and roadmap tracked in `docs/Design/LLD.md` backlog.
 - Emits parity watermarks via Prometheus (`exercise_ontology_service_knowledge_last_ontology_upsert_timestamp_seconds` and `_last_ontology_read_timestamp_seconds`) and calls an optional edge cache invalidation webhook when exercises mutate (`CACHE_INVALIDATION_URL`).
+- Companion Kafka consumer (`exercise-ontology-consumer`) processes `activity_events`, exposing metrics on `:9195` and currently logs payloads for future enrichment work. Configure brokers/topics via `KAFKA_BROKERS`/`CONSUMER_TOPICS` and adjust scrape targets in Prometheus config.
 
 For a complete walkthrough covering Three Musketeers workflows, migrations, Schema Registry validation, Redis limiter configuration, DLQ manager tuning, and observability tips, see `docs/DeveloperGuide.md`.
 
@@ -118,9 +135,10 @@ Hooks run formatters/lints (gofmt/goimports, golangci-lint, black, ruff, prettie
 
 ## Observability & Diagnostics
 
-- Prometheus endpoints mounted at `/metrics` for Go services; FastAPI uses `prometheus-fastapi-instrumentator` (configure via settings).
-- Activity outbox metrics (`batch_duration_seconds`, `events_delivered_total`, `events_failed_total`, `events_dlq_total{topic="..."}`) surface replay health.
-- Compose deploys Grafana/Prometheus stubs (TODO) — see `infrastructure/compose/docker-compose.yml` for ports.
+- Prometheus endpoints mounted at `/metrics` for Go services; FastAPI uses `prometheus-fastapi-instrumentator` (configure via settings). Consumer and DLQ manager binaries expose metrics on `:9095` and `:9096` respectively.
+- Activity outbox metrics (`batch_duration_seconds`, `events_delivered_total`, `events_failed_total`, `events_dlq_total{topic="..."}`) surface replay health. Consumer metrics (`messages_processed_total`, `handler_errors_total`, `last_message_timestamp_seconds`) highlight lag, while DLQ metrics (`messages_requeued_total`, `messages_quarantined_total`, `queued_messages`) track backlog/reties.
+- Exercise ontology consumer exposes Prometheus metrics (`exercise_ontology_consumer_messages_processed_total`, `exercise_ontology_consumer_last_message_timestamp_seconds`) on :9195 for visibility into Kafka ingestion.
+- Sample Prometheus alerting rules live in `infrastructure/observability/prometheus-rules.yaml` covering consumer stalls, DLQ backlog, and quarantined entries. Compose now ships Prometheus (http://localhost:9090) and Grafana (http://localhost:3000, admin/admin) pre-wired to scrape activity, consumer, and DLQ metrics — see `infrastructure/compose/docker-compose.yml` for service definitions. Grafana bootstraps the `Activity Platform Overview` dashboard from `infrastructure/observability/grafana/dashboards/activity-overview.json`. Import `infrastructure/observability/prometheus-rules.yaml` in your central Prometheus to enable the suggested alerts.
 
 ## Testing Matrix
 
@@ -139,6 +157,7 @@ Hooks run formatters/lints (gofmt/goimports, golangci-lint, black, ruff, prettie
 - **`ci.yml`** — runs the full Three Musketeers flow on pushes/PRs: builds, lint/tests, integration suite, frontend build/tests, compose smoke test.
 - **`swagger-ui.yml`** — publishes static Swagger UI to GitHub Pages from `docs/API` artifacts.
 - **`build-dist.yml`** — idiomatic release workflow building distributable artifacts on tags: Go binaries (activity/ontology), Python wheel/sdist (`identity-service`), and frontend production bundle zipped for deployment.
+- **`docs.yml`** — builds frontend TypeDoc and identity Sphinx HTML docs, uploading both as workflow artifacts for review or publishing.
 
 Artifacts are uploaded to the workflow run for downstream packaging or release automation.
 

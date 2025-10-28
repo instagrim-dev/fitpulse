@@ -3,36 +3,40 @@
 package postgres
 
 import (
-    "context"
-    "os"
-    "path/filepath"
-    "runtime"
-    "testing"
-    "time"
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
 
-    "github.com/google/uuid"
-    "github.com/jackc/pgx/v5/pgxpool"
-    "github.com/stretchr/testify/require"
-    postgrescontainer "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/require"
+	postgrescontainer "github.com/testcontainers/testcontainers-go/modules/postgres"
 
-    "example.com/activity/internal/domain"
+	"example.com/activity/internal/domain"
 )
 
 func TestRepositoryRespectsTenantIsolation(t *testing.T) {
 	ctx := context.Background()
 
-    pg, err := postgrescontainer.RunContainer(ctx,
-        postgrescontainer.WithDatabase("fitness"),
-        postgrescontainer.WithUsername("platform"),
-        postgrescontainer.WithPassword("platform"),
-    )
-    require.NoError(t, err)
-    t.Cleanup(func() { _ = pg.Terminate(ctx) })
+	pg, err := postgrescontainer.RunContainer(ctx,
+		postgrescontainer.WithDatabase("fitness"),
+		postgrescontainer.WithUsername("platform"),
+		postgrescontainer.WithPassword("platform"),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = pg.Terminate(ctx) })
 
-    connStr, err := pg.ConnectionString(ctx, "sslmode=disable")
-    require.NoError(t, err)
+	connStr, err := pg.ConnectionString(ctx, "sslmode=disable")
+	require.NoError(t, err)
 
-    require.NoError(t, waitForDatabase(ctx, connStr))
+	require.NoError(t, waitForDatabase(ctx, connStr))
 
 	runMigrations(t, ctx, connStr)
 
@@ -74,6 +78,8 @@ func runMigrations(t *testing.T, ctx context.Context, connStr string) {
 	files := []string{
 		"../../../../../db/postgres/migrations/0001_init.up.sql",
 		"../../../../../db/postgres/migrations/0002_outbox_dlq_retry.up.sql",
+		"../../../../../db/postgres/migrations/0003_activity_event_log.up.sql",
+		"../../../../../db/postgres/migrations/0004_identity_tokens.up.sql",
 	}
 
 	pool, err := pgxpool.New(ctx, connStr)
@@ -85,32 +91,73 @@ func runMigrations(t *testing.T, ctx context.Context, connStr string) {
 		contents, readErr := os.ReadFile(path)
 		require.NoError(t, readErr)
 
-		_, execErr := pool.Exec(ctx, string(contents))
-		require.NoError(t, execErr)
+		for _, stmt := range splitStatements(string(contents)) {
+			if strings.TrimSpace(stmt) == "" {
+				continue
+			}
+			_, execErr := pool.Exec(ctx, stmt)
+			if execErr != nil {
+				fmt.Printf("migration failure path=%s type=%T err=%v stmt=%s\n", path, execErr, execErr, stmt)
+				var pgErr *pgconn.PgError
+				if errors.As(execErr, &pgErr) {
+					require.NoErrorf(t, execErr, "executing migration %s (sqlstate=%s message=%s detail=%s position=%s, hint=%s, where=%s)", path, pgErr.SQLState(), pgErr.Message, pgErr.Detail, pgErr.Position, pgErr.Hint, pgErr.Where)
+				}
+				require.NoErrorf(t, execErr, "executing migration %s (type=%T)", path, execErr)
+			}
+		}
 	}
 }
 
 func resolvePath(t *testing.T, rel string) string {
-    t.Helper()
-    _, file, _, ok := runtime.Caller(0)
-    require.True(t, ok)
-    return filepath.Join(filepath.Dir(file), rel)
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	return filepath.Join(filepath.Dir(file), rel)
 }
 
 func waitForDatabase(ctx context.Context, connStr string) error {
-    deadline := time.Now().Add(30 * time.Second)
-    for {
-        pool, err := pgxpool.New(ctx, connStr)
-        if err == nil {
-            err = pool.Ping(ctx)
-            pool.Close()
-            if err == nil {
-                return nil
-            }
-        }
-        if time.Now().After(deadline) {
-            return err
-        }
-        time.Sleep(time.Second)
-    }
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		pool, err := pgxpool.New(ctx, connStr)
+		if err == nil {
+			err = pool.Ping(ctx)
+			pool.Close()
+			if err == nil {
+				return nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(time.Second)
+	}
+}
+
+func splitStatements(script string) []string {
+	var (
+		statements []string
+		builder    strings.Builder
+		inComment  bool
+	)
+	for i := 0; i < len(script); i++ {
+		if !inComment && i+1 < len(script) && script[i] == '-' && script[i+1] == '-' {
+			inComment = true
+		}
+		if script[i] == '\n' {
+			inComment = false
+		}
+		if inComment {
+			continue
+		}
+		if script[i] == ';' {
+			statements = append(statements, builder.String())
+			builder.Reset()
+			continue
+		}
+		builder.WriteByte(script[i])
+	}
+	if strings.TrimSpace(builder.String()) != "" {
+		statements = append(statements, builder.String())
+	}
+	return statements
 }

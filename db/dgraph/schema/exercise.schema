@@ -10,6 +10,18 @@ requires: [string] .
 contraindicated_with: [string] .
 complementary_to: [string] .
 last_updated: datetime @index(hour) .
+last_seen_at: datetime @index(hour) .
+session_count: int .
+session_id: string @index(exact) @upsert .
+activity_id: string @index(exact) .
+tenant_id: string @index(exact) .
+user_id: string @index(exact) .
+source: string .
+version: string .
+started_at: datetime @index(hour) .
+duration_min: int .
+recorded_at: datetime @index(hour) .
+exercise: uid @reverse .
 
 # Type definition
 
@@ -22,4 +34,19 @@ type Exercise {
     contraindicated_with
     complementary_to
     last_updated
+    last_seen_at
+    session_count
+}
+
+type ActivitySession {
+    session_id
+    activity_id
+    tenant_id
+    user_id
+    source
+    version
+    started_at
+    duration_min
+    recorded_at
+    exercise
 }

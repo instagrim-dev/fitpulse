@@ -1,0 +1,55 @@
+name: docs
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.7.0'
+
+      - name: Install pnpm
+        run: corepack enable pnpm
+
+      - name: Install frontend dependencies
+        working-directory: frontend/web
+        run: pnpm install --frozen-lockfile
+
+      - name: Build TypeDoc documentation
+        working-directory: frontend/web
+        run: pnpm run docs
+
+      - name: Upload TypeDoc artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-typedoc
+          path: frontend/web/typedoc
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install identity service dependencies
+        working-directory: services/identity-service
+        run: pip install .[dev]
+
+      - name: Build Sphinx HTML docs
+        working-directory: services/identity-service
+        run: sphinx-build -b html docs docs/_build/html
+
+      - name: Upload Sphinx artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: identity-sphinx-html
+          path: services/identity-service/docs/_build/html

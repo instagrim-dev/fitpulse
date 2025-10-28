@@ -27,17 +27,41 @@ const (
 
 // ActivityAggregate is the domain object stored in Postgres and replayed to downstream stores.
 type ActivityAggregate struct {
-	ID           string
-	TenantID     string
-	UserID       string
-	ActivityType string
-	StartedAt    time.Time
-	DurationMin  int
-	Source       string
-	Version      string
-	State        ActivityState
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID              string
+	TenantID        string
+	UserID          string
+	ActivityType    string
+	StartedAt       time.Time
+	DurationMin     int
+	Source          string
+	Version         string
+	State           ActivityState
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	FailureReason   *string
+	NextRetryAt     *time.Time
+	QuarantinedAt   *time.Time
+	ReplayAvailable bool
+}
+
+// ActivitySummary captures aggregate statistics for a cohort of activities.
+type ActivitySummary struct {
+	Total                    int
+	Pending                  int
+	Synced                   int
+	Failed                   int
+	AverageDurationMinutes   float64
+	AverageProcessingSeconds float64
+	OldestPendingAgeSeconds  float64
+	LastActivityAt           *time.Time
+	SuccessRate              float64
+}
+
+// ActivityMetrics bundles summary statistics with recent timeline samples.
+type ActivityMetrics struct {
+	Summary       ActivitySummary
+	Timeline      []ActivityAggregate
+	WindowSeconds int64
 }
 
 // ActivityRepository captures persistence operations.
@@ -46,6 +70,7 @@ type ActivityRepository interface {
 	Create(ctx context.Context, aggregate ActivityAggregate, idempotencyKey string) error
 	Get(ctx context.Context, tenantID, activityID string) (*ActivityAggregate, error)
 	ListByUser(ctx context.Context, tenantID, userID string, cursor *Cursor, limit int) ([]ActivityAggregate, *Cursor, error)
+	SummaryByUser(ctx context.Context, tenantID, userID string, window time.Duration) (ActivitySummary, error)
 }
 
 // Service orchestrates activity workflows.
@@ -83,17 +108,18 @@ func (s *Service) CreateActivity(ctx context.Context, input CreateActivityInput)
 
 	now := time.Now().UTC()
 	aggregate := ActivityAggregate{
-		ID:           uuid.NewString(),
-		TenantID:     input.TenantID,
-		UserID:       input.UserID,
-		ActivityType: input.ActivityType,
-		StartedAt:    input.StartedAt.UTC(),
-		DurationMin:  input.DurationMin,
-		Source:       input.Source,
-		Version:      "v1",
-		State:        ActivityStatePending,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:              uuid.NewString(),
+		TenantID:        input.TenantID,
+		UserID:          input.UserID,
+		ActivityType:    input.ActivityType,
+		StartedAt:       input.StartedAt.UTC(),
+		DurationMin:     input.DurationMin,
+		Source:          input.Source,
+		Version:         "v1",
+		State:           ActivityStatePending,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		ReplayAvailable: false,
 	}
 
 	if err := s.repo.Create(ctx, aggregate, input.IdempotencyKey); err != nil {
@@ -118,4 +144,37 @@ func (s *Service) GetActivity(ctx context.Context, tenantID, activityID string) 
 // ListActivitiesByUser fetches activities with cursor pagination.
 func (s *Service) ListActivitiesByUser(ctx context.Context, tenantID, userID string, cursor *Cursor, limit int) ([]ActivityAggregate, *Cursor, error) {
 	return s.repo.ListByUser(ctx, tenantID, userID, cursor, limit)
+}
+
+// GetActivityMetrics returns aggregate statistics and a recent timeline slice.
+func (s *Service) GetActivityMetrics(ctx context.Context, tenantID, userID string, window time.Duration, timelineLimit int) (ActivityMetrics, error) {
+	if timelineLimit <= 0 {
+		timelineLimit = 10
+	}
+	if window < 0 {
+		window = 0
+	}
+
+	summary, err := s.repo.SummaryByUser(ctx, tenantID, userID, window)
+	if err != nil {
+		return ActivityMetrics{}, err
+	}
+
+	activities, _, err := s.repo.ListByUser(ctx, tenantID, userID, nil, timelineLimit)
+	if err != nil {
+		return ActivityMetrics{}, err
+	}
+
+	total := summary.Total
+	if total > 0 {
+		summary.SuccessRate = float64(summary.Synced) / float64(total)
+	} else {
+		summary.SuccessRate = 0
+	}
+
+	return ActivityMetrics{
+		Summary:       summary,
+		Timeline:      activities,
+		WindowSeconds: int64(window / time.Second),
+	}, nil
 }

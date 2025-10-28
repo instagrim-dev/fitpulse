@@ -7,7 +7,9 @@ This guide captures the workflows, tooling, and configuration needed to work pro
 - **Docker Engine** and the docker-compose plugin.
 - **Go 1.25+** (local builds use `golang` container images, but having the toolchain installed helps for IDE integration).
 - **Python 3.11+** (optional locally; the Three Musketeers pattern runs tests via containers).
-- **Node.js 20+ with pnpm** (`corepack enable pnpm`).
+- **Node.js 24.x with pnpm 10.x** (`corepack use pnpm@10.19.0`).
+- Optional: **Playwright browsers** (`pnpm exec playwright install`) for running frontend E2E tests.
+- Optional: set `VITE_ENABLE_TELEMETRY=true` with `VITE_TELEMETRY_URL` when validating telemetry forwarding locally; otherwise events are logged to the console in dev builds.
 - **Task** (`brew install go-task/tap/go-task` or download binaries).
 - Optional: **Redis CLI** for debugging the distributed rate limiter.
 
@@ -32,6 +34,8 @@ Common tasks (`task --list` for the full catalog):
 | `task test:integration` | Go integration tests (pgx/testcontainers). |
 | `task docs:lint` | Spectral lint for OpenAPI specs. |
 | `task smoke:compose` | Bring up minimal stack, validate health checks, Schema Registry, Redis, and tear down. |
+| `task web:test` | Frontend unit tests via Vitest (headless). |
+| `task web:test:e2e` | Playwright E2E covering dashboard replay flow (requires browsers). |
 
 Most tasks rely on Docker; ensure the daemon is running before executing.
 

@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"example.com/activity/internal/config"
 	"example.com/activity/internal/outbox"
@@ -32,6 +34,14 @@ func main() {
 
 	manager := outbox.NewDLQManager(pool, cfg.DLQMaxRetries, cfg.DLQBaseDelay)
 
+	metricsSrv := &http.Server{Addr: cfg.MetricsAddress, Handler: promhttp.Handler()}
+	go func() {
+		log.Printf("dlq manager metrics listening on %s", cfg.MetricsAddress)
+		if err := metricsSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("metrics server error: %v", err)
+		}
+	}()
+
 	ticker := time.NewTicker(cfg.DLQPollInterval)
 	defer ticker.Stop()
 
@@ -43,7 +53,7 @@ func main() {
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			goto shutdown
 		case <-ticker.C:
 			processed, err := manager.RunOnce(ctx, defaultDLQBatchSize)
 			if err != nil {
@@ -53,7 +63,15 @@ func main() {
 			}
 		case <-stop:
 			log.Println("dlq manager received shutdown signal")
-			return
+			cancel()
+			goto shutdown
 		}
+	}
+
+shutdown:
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	if err := metricsSrv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("metrics server shutdown error: %v", err)
 	}
 }

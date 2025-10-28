@@ -188,6 +188,11 @@ func (d *Dispatcher) deliver(ctx context.Context, messages []Message) error {
 			Key:   []byte(msg.PartitionKey),
 			Value: encoded,
 			Time:  time.Now().UTC(),
+			Headers: []kafka.Header{
+				{Key: "event_type", Value: []byte(msg.EventType)},
+				{Key: "tenant_id", Value: []byte(msg.TenantID)},
+				{Key: "schema_subject", Value: []byte(msg.SchemaSubject)},
+			},
 		}
 
 		batch, exists := batches[msg.Topic]

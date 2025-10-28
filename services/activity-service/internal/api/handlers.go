@@ -28,6 +28,7 @@ func NewHandler(service *domain.Service) *Handler {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/activities", h.activities)
 	mux.HandleFunc("/v1/activities/", h.activityByID)
+	mux.HandleFunc("/v1/activities/metrics", h.activityMetrics)
 	mux.HandleFunc("/healthz", healthz)
 }
 
@@ -135,19 +136,7 @@ func (h *Handler) getActivity(w http.ResponseWriter, r *http.Request, id string)
 		return
 	}
 
-	resp := ActivityView{
-		ActivityID:   aggregate.ID,
-		TenantID:     aggregate.TenantID,
-		UserID:       aggregate.UserID,
-		ActivityType: aggregate.ActivityType,
-		StartedAt:    aggregate.StartedAt,
-		DurationMin:  aggregate.DurationMin,
-		Source:       aggregate.Source,
-		Version:      aggregate.Version,
-		Status:       string(aggregate.State),
-		CreatedAt:    aggregate.CreatedAt,
-		UpdatedAt:    aggregate.UpdatedAt,
-	}
+	resp := toActivityView(*aggregate)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -190,25 +179,84 @@ func (h *Handler) listActivities(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]ActivityView, 0, len(aggregates))
 	for _, agg := range aggregates {
-		items = append(items, ActivityView{
-			ActivityID:   agg.ID,
-			TenantID:     agg.TenantID,
-			UserID:       agg.UserID,
-			ActivityType: agg.ActivityType,
-			StartedAt:    agg.StartedAt,
-			DurationMin:  agg.DurationMin,
-			Source:       agg.Source,
-			Version:      agg.Version,
-			Status:       string(agg.State),
-			CreatedAt:    agg.CreatedAt,
-			UpdatedAt:    agg.UpdatedAt,
-		})
+		items = append(items, toActivityView(agg))
 	}
 
 	resp := ListActivitiesResponse{
 		Items:      items,
 		NextCursor: persistence.EncodeCursor(next),
 	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) activityMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "unsupported method")
+		return
+	}
+
+	claims, ok := auth.FromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "missing bearer token")
+		return
+	}
+	if !claims.HasScope(auth.ScopeActivitiesRead) && !claims.HasScope(auth.ScopeActivitiesWrite) {
+		writeError(w, http.StatusForbidden, "forbidden", "scope activities:read required")
+		return
+	}
+
+	userID := r.URL.Query().Get("user_id")
+	if strings.TrimSpace(userID) == "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", "missing user_id parameter")
+		return
+	}
+
+	timelineLimit := 10
+	if raw := r.URL.Query().Get("timeline_limit"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			if parsed > 50 {
+				parsed = 50
+			}
+			timelineLimit = parsed
+		}
+	}
+
+	windowHours := 24
+	if raw := r.URL.Query().Get("window_hours"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
+			windowHours = parsed
+		}
+	}
+
+	window := time.Duration(windowHours) * time.Hour
+	metrics, err := h.service.GetActivityMetrics(r.Context(), claims.TenantID, userID, window, timelineLimit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "server_error", err.Error())
+		return
+	}
+
+	summary := metrics.Summary
+	resp := ActivityMetricsResponse{
+		Summary: ActivityMetricsSummary{
+			Total:                    summary.Total,
+			Pending:                  summary.Pending,
+			Synced:                   summary.Synced,
+			Failed:                   summary.Failed,
+			AverageDurationMinutes:   summary.AverageDurationMinutes,
+			AverageProcessingSeconds: summary.AverageProcessingSeconds,
+			OldestPendingAgeSeconds:  summary.OldestPendingAgeSeconds,
+			SuccessRate:              summary.SuccessRate,
+			LastActivityAt:           summary.LastActivityAt,
+		},
+		WindowSeconds: metrics.WindowSeconds,
+		TimelineLimit: timelineLimit,
+		Timeline:      make([]ActivityView, 0, len(metrics.Timeline)),
+	}
+
+	for _, agg := range metrics.Timeline {
+		resp.Timeline = append(resp.Timeline, toActivityView(agg))
+	}
+
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -250,23 +298,48 @@ type CreateActivityResponse struct {
 
 // ActivityView exposes full details about an activity.
 type ActivityView struct {
-	ActivityID   string    `json:"activity_id"`
-	TenantID     string    `json:"tenant_id"`
-	UserID       string    `json:"user_id"`
-	ActivityType string    `json:"activity_type"`
-	StartedAt    time.Time `json:"started_at"`
-	DurationMin  int       `json:"duration_min"`
-	Source       string    `json:"source"`
-	Version      string    `json:"version"`
-	Status       string    `json:"status"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ActivityID      string     `json:"activity_id"`
+	TenantID        string     `json:"tenant_id"`
+	UserID          string     `json:"user_id"`
+	ActivityType    string     `json:"activity_type"`
+	StartedAt       time.Time  `json:"started_at"`
+	DurationMin     int        `json:"duration_min"`
+	Source          string     `json:"source"`
+	Version         string     `json:"version"`
+	Status          string     `json:"status"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	FailureReason   *string    `json:"failure_reason,omitempty"`
+	NextRetryAt     *time.Time `json:"next_retry_at,omitempty"`
+	QuarantinedAt   *time.Time `json:"quarantined_at,omitempty"`
+	ReplayAvailable bool       `json:"replay_available"`
 }
 
 // ListActivitiesResponse packages list results.
 type ListActivitiesResponse struct {
 	Items      []ActivityView `json:"items"`
 	NextCursor string         `json:"next_cursor,omitempty"`
+}
+
+// ActivityMetricsSummary describes aggregate stats for a cohort of activities.
+type ActivityMetricsSummary struct {
+	Total                    int        `json:"total"`
+	Pending                  int        `json:"pending"`
+	Synced                   int        `json:"synced"`
+	Failed                   int        `json:"failed"`
+	AverageDurationMinutes   float64    `json:"average_duration_minutes"`
+	AverageProcessingSeconds float64    `json:"average_processing_seconds"`
+	OldestPendingAgeSeconds  float64    `json:"oldest_pending_age_seconds"`
+	SuccessRate              float64    `json:"success_rate"`
+	LastActivityAt           *time.Time `json:"last_activity_at,omitempty"`
+}
+
+// ActivityMetricsResponse merges summary metrics with recent timeline entries.
+type ActivityMetricsResponse struct {
+	Summary       ActivityMetricsSummary `json:"summary"`
+	Timeline      []ActivityView         `json:"timeline"`
+	TimelineLimit int                    `json:"timeline_limit"`
+	WindowSeconds int64                  `json:"window_seconds"`
 }
 
 func writeError(w http.ResponseWriter, status int, code, detail string) {
@@ -282,5 +355,25 @@ func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func toActivityView(agg domain.ActivityAggregate) ActivityView {
+	return ActivityView{
+		ActivityID:      agg.ID,
+		TenantID:        agg.TenantID,
+		UserID:          agg.UserID,
+		ActivityType:    agg.ActivityType,
+		StartedAt:       agg.StartedAt,
+		DurationMin:     agg.DurationMin,
+		Source:          agg.Source,
+		Version:         agg.Version,
+		Status:          string(agg.State),
+		CreatedAt:       agg.CreatedAt,
+		UpdatedAt:       agg.UpdatedAt,
+		FailureReason:   agg.FailureReason,
+		NextRetryAt:     agg.NextRetryAt,
+		QuarantinedAt:   agg.QuarantinedAt,
+		ReplayAvailable: agg.ReplayAvailable,
 	}
 }

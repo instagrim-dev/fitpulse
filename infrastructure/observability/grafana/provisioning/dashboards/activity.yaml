@@ -1,0 +1,10 @@
+apiVersion: 1
+
+disableDeletion: false
+allowUiUpdates: true
+folders:
+  - name: Activity Platform
+    folderUid: activity-platform
+    type: dashboard
+    options:
+      path: /etc/grafana/dashboards

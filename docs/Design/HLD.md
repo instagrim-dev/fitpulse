@@ -57,9 +57,11 @@ flowchart TD
 ### 3.2 Backend Services
 | Service | Language | Responsibility |
 |----------|----------|----------------|
-| Identity & Account | Python (FastAPI) | Authentication, account lifecycle, tenant isolation, token issuance |
+| Identity & Account | Python (FastAPI) | Authentication, account lifecycle, tenant isolation, token & refresh issuance, audit logging |
 | Activity | Go | Workout ingestion, transactional source of truth, outbox to Kafka |
+| Activity Consumer | Go | Kafka consumer archiving events and requeueing DLQ records |
 | Exercise Ontology & Search | Go | Exercise taxonomy CRUD, knowledge graph traversal, keyword/tag search |
+| Ontology Consumer | Go | Consumes activity events from Kafka to drive enrichment pipeline (initial logging/metrics) |
 
 ---
 
@@ -73,7 +75,8 @@ flowchart TD
 ### Dgraph (Graph OLTP)
 - Nodes: Exercise, MuscleGroup, Equipment, Goal
 - Edges: TARGETS, REQUIRES, CONTRAINDICATED_WITH, COMPLEMENTARY_TO
-- Stores ontology relationships for quick traversal, personalization, and recommendation queries driven by the Exercise Ontology service.
+- Stores ontology relationships for quick traversal, personalization, and recommendation queries driven by the Exercise Ontology service. Activity events update aggregate fields (e.g., `session_count`, `last_updated`) via the Kafka enrichment consumer.
+- Each exercise node now owns outbound edges to `ActivitySession` nodes that capture the original activity metadata (`started_at`, `duration_min`, `source`, etc.), enabling drill-down queries and historical context without blocking enrichment writes.
 
 #### 4.2.1 Technology Choice Rationale and Risks
 The selection of Dgraph is based on its horizontal scalability and native GraphQL integration, which aligns with our long-term vision for rich exercise knowledge navigation. However, we acknowledge that Dgraph is a less mature technology than some alternatives (e.g., Neo4j), which presents risks related to the size of the developer community and the availability of third-party tools. To mitigate these risks, we will invest in targeted training for the development team and allocate resources for building in-house expertise and custom tooling where necessary. The limited scope (one service) lowers overall blast radius.
@@ -108,6 +111,8 @@ Ensures **atomic write + eventual consistency** across stores.
 
 ### 5.1 Outbox Pattern Considerations
 While the transactional outbox pattern provides a strong guarantee of atomicity, it introduces operational complexity. The outbox consumer becomes a critical component that requires robust monitoring and alerting on its processing lag, the size of the `outbox` table, and the Dead Letter Queue (DLQ) depth. A well-defined strategy for handling DLQ messages, including automated retries with exponential backoff and a clear process for manual intervention, is essential to prevent data drift between PostgreSQL and Dgraph.
+
+Prometheus scrapes the activity API, Kafka consumer, and DLQ manager endpoints; Grafana dashboards visualize the core delivery metrics. Alert rules (consumer stall, DLQ backlog, quarantine events) are defined in `infrastructure/observability/prometheus-rules.yaml` to trigger SRE intervention before downstream services fall behind.
 
 ### 5.2 Event Propagation Sequence
 

@@ -73,13 +73,12 @@ func TestSearchExercisesRequiresAuth(t *testing.T) {
 	}
 }
 
-func TestUpsertExercisePersistsAndReturnsBody(t *testing.T) {
+func TestCreateExercisePersistsAndReturnsBody(t *testing.T) {
 	repo := knowledge.NewInMemoryRepository()
 	service := domain.NewService(repo, cache.NoopInvalidator{})
 	handler := NewHandler(service)
 
 	payload := map[string]interface{}{
-		"id":         "exercise-123",
 		"name":       "Turkish Get-Up",
 		"difficulty": "advanced",
 		"targets":    []string{"core", "shoulders"},
@@ -99,8 +98,8 @@ func TestUpsertExercisePersistsAndReturnsBody(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler.exercises(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", rr.Code)
 	}
 
 	var body struct {
@@ -114,6 +113,216 @@ func TestUpsertExercisePersistsAndReturnsBody(t *testing.T) {
 	}
 	if body.Exercise.Name != "Turkish Get-Up" {
 		t.Fatalf("expected name \"Turkish Get-Up\" got %s", body.Exercise.Name)
+	}
+}
+
+func TestCreateExerciseValidationError(t *testing.T) {
+	repo := knowledge.NewInMemoryRepository()
+	service := domain.NewService(repo, cache.NoopInvalidator{})
+	handler := NewHandler(service)
+
+	payload := map[string]interface{}{
+		"difficulty": "easy",
+	}
+	buf, _ := json.Marshal(payload)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/exercises", bytes.NewReader(buf))
+	req.Header.Set("Content-Type", "application/json")
+	claims := &auth.Claims{
+		Subject:   "coach",
+		TenantID:  "tenant",
+		Scopes:    scopesWith(auth.ScopeOntologyWrite),
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	req = req.WithContext(auth.WithClaims(req.Context(), claims))
+
+	rr := httptest.NewRecorder()
+	handler.exercises(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestUpdateExercise(t *testing.T) {
+	repo := knowledge.NewInMemoryRepository()
+	service := domain.NewService(repo, cache.NoopInvalidator{})
+	handler := NewHandler(service)
+
+	created, err := service.UpsertExercise(context.Background(), domain.Exercise{
+		ID:   "exercise-321",
+		Name: "Row",
+	})
+	if err != nil {
+		t.Fatalf("seed failed: %v", err)
+	}
+
+	payload := map[string]interface{}{
+		"name":       "Bent-over Row",
+		"difficulty": "intermediate",
+		"targets":    []string{"back"},
+	}
+	buf, _ := json.Marshal(payload)
+
+	req := httptest.NewRequest(http.MethodPut, "/v1/exercises/"+created.ID, bytes.NewReader(buf))
+	req.Header.Set("Content-Type", "application/json")
+	claims := &auth.Claims{
+		Subject:   "coach",
+		TenantID:  "tenant",
+		Scopes:    scopesWith(auth.ScopeOntologyWrite),
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	req = req.WithContext(auth.WithClaims(req.Context(), claims))
+
+	rr := httptest.NewRecorder()
+	handler.exerciseByID(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+
+	var body struct {
+		Exercise domain.Exercise `json:"exercise"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if body.Exercise.Name != "Bent-over Row" {
+		t.Fatalf("expected updated name, got %s", body.Exercise.Name)
+	}
+}
+
+func TestDeleteExercise(t *testing.T) {
+	repo := knowledge.NewInMemoryRepository()
+	service := domain.NewService(repo, cache.NoopInvalidator{})
+	handler := NewHandler(service)
+
+	exercise, err := service.UpsertExercise(context.Background(), domain.Exercise{
+		ID:   "exercise-delete",
+		Name: "Lunge",
+	})
+	if err != nil {
+		t.Fatalf("seed failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/v1/exercises/"+exercise.ID, nil)
+	claims := &auth.Claims{
+		Subject:   "coach",
+		TenantID:  "tenant",
+		Scopes:    scopesWith(auth.ScopeOntologyWrite),
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	req = req.WithContext(auth.WithClaims(req.Context(), claims))
+
+	rr := httptest.NewRecorder()
+	handler.exerciseByID(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rr.Code)
+	}
+
+	retrieved, err := service.GetExercise(context.Background(), exercise.ID)
+	if err == nil && retrieved != nil {
+		t.Fatalf("expected exercise to be deleted")
+	}
+}
+
+func TestUpdateRelationships(t *testing.T) {
+	repo := knowledge.NewInMemoryRepository()
+	service := domain.NewService(repo, cache.NoopInvalidator{})
+	handler := NewHandler(service)
+
+	base, err := service.UpsertExercise(context.Background(), domain.Exercise{
+		ID:   "exercise-base",
+		Name: "Base",
+	})
+	if err != nil {
+		t.Fatalf("seed failed: %v", err)
+	}
+	other, err := service.UpsertExercise(context.Background(), domain.Exercise{
+		ID:   "exercise-other",
+		Name: "Other",
+	})
+	if err != nil {
+		t.Fatalf("seed failed: %v", err)
+	}
+
+	payload := map[string]interface{}{
+		"targets":              []string{"endurance"},
+		"complementary_to":     []string{other.ID},
+		"contraindicated_with": []string{},
+	}
+	buf, _ := json.Marshal(payload)
+
+	req := httptest.NewRequest(http.MethodPut, "/v1/exercises/"+base.ID+"/relationships", bytes.NewReader(buf))
+	req.Header.Set("Content-Type", "application/json")
+	claims := &auth.Claims{
+		Subject:   "coach",
+		TenantID:  "tenant",
+		Scopes:    scopesWith(auth.ScopeOntologyWrite),
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	req = req.WithContext(auth.WithClaims(req.Context(), claims))
+
+	rr := httptest.NewRecorder()
+	handler.exerciseByID(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+
+	ex, err := service.GetExercise(context.Background(), base.ID)
+	if err != nil {
+		t.Fatalf("get failed: %v", err)
+	}
+	if len(ex.Targets) == 0 || ex.Targets[0] != "endurance" {
+		t.Fatalf("expected targets to update")
+	}
+	if len(ex.ComplementaryTo) != 1 || ex.ComplementaryTo[0] != other.ID {
+		t.Fatalf("expected complementary to include other")
+	}
+	otherUpdated, err := service.GetExercise(context.Background(), other.ID)
+	if err != nil {
+		t.Fatalf("get other failed: %v", err)
+	}
+	if len(otherUpdated.ComplementaryTo) != 1 || otherUpdated.ComplementaryTo[0] != base.ID {
+		t.Fatalf("expected reciprocal complementary link")
+	}
+}
+
+func TestUpdateRelationshipsInvalidReference(t *testing.T) {
+	repo := knowledge.NewInMemoryRepository()
+	service := domain.NewService(repo, cache.NoopInvalidator{})
+	handler := NewHandler(service)
+
+	base, err := service.UpsertExercise(context.Background(), domain.Exercise{
+		ID:   "exercise-base",
+		Name: "Base",
+	})
+	if err != nil {
+		t.Fatalf("seed failed: %v", err)
+	}
+
+	payload := map[string]interface{}{
+		"complementary_to": []string{"missing"},
+	}
+	buf, _ := json.Marshal(payload)
+
+	req := httptest.NewRequest(http.MethodPut, "/v1/exercises/"+base.ID+"/relationships", bytes.NewReader(buf))
+	req.Header.Set("Content-Type", "application/json")
+	claims := &auth.Claims{
+		Subject:   "coach",
+		TenantID:  "tenant",
+		Scopes:    scopesWith(auth.ScopeOntologyWrite),
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	req = req.WithContext(auth.WithClaims(req.Context(), claims))
+
+	rr := httptest.NewRecorder()
+	handler.exerciseByID(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
 	}
 }
 

@@ -12,6 +12,7 @@ services:
       - POSTGRES_URL=postgres://platform:platform@postgres:5432/fitness
       - JWT_SECRET=dev-shared-secret
       - JWT_ISSUER=i5e.identity
+      - REFRESH_TTL_SECONDS=86400
       - RATE_LIMIT_REQUESTS=50
       - RATE_LIMIT_WINDOW_SECONDS=60
       - RATE_LIMIT_BACKEND=redis
@@ -37,6 +38,8 @@ services:
       - SCHEMA_REGISTRY_URL=http://schema-registry:8081
       - JWT_SECRET=dev-shared-secret
       - JWT_ISSUER=i5e.identity
+      - CONSUMER_GROUP_ID=activity-service-consumer
+      - CONSUMER_TOPICS=activity_events,activity_state_changed
     depends_on:
       postgres-seed:
         condition: service_completed_successfully
@@ -58,11 +61,36 @@ services:
       - DLQ_POLL_INTERVAL=30s
       - DLQ_MAX_RETRIES=5
       - DLQ_BASE_DELAY=1m
+      - METRICS_ADDRESS=:9096
     depends_on:
       postgres-seed:
         condition: service_completed_successfully
     networks:
       - platform
+    ports:
+      - "9096:9096"
+
+  activity-consumer:
+    build:
+      context: ../../
+      dockerfile: services/activity-service/Dockerfile
+      target: runtime
+    entrypoint: ["/usr/local/bin/activity-consumer"]
+    environment:
+      - POSTGRES_URL=postgres://platform:platform@postgres:5432/fitness?sslmode=disable
+      - KAFKA_BROKERS=kafka:29092
+      - CONSUMER_GROUP_ID=activity-service-consumer
+      - CONSUMER_TOPICS=activity_events,activity_state_changed
+      - METRICS_ADDRESS=:9095
+    depends_on:
+      postgres-seed:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_started
+    networks:
+      - platform
+    ports:
+      - "9095:9095"
 
   exercise-ontology-service:
     build:
@@ -78,6 +106,26 @@ services:
     depends_on:
       dgraph-alpha:
         condition: service_healthy
+    networks:
+      - platform
+
+  exercise-ontology-consumer:
+    build:
+      context: ../../
+      dockerfile: services/exercise-ontology-service/Dockerfile
+      target: runtime
+    entrypoint: ["/usr/local/bin/exercise-ontology-consumer"]
+    environment:
+      - DGRAPH_URL=http://dgraph-alpha:8080
+      - KAFKA_BROKERS=kafka:29092
+      - CONSUMER_GROUP_ID=exercise-ontology-consumer
+      - CONSUMER_TOPICS=activity_events
+      - METRICS_ADDRESS=:9195
+    depends_on:
+      kafka:
+        condition: service_started
+    ports:
+      - "9195:9195"
     networks:
       - platform
 
@@ -184,6 +232,38 @@ services:
       - "8081:8081"
     networks:
       - platform
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../../infrastructure/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../../infrastructure/observability/prometheus-rules.yaml:/etc/prometheus/alerting/prometheus-rules.yaml:ro
+    depends_on:
+      activity-service:
+        condition: service_started
+    networks:
+      - platform
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+    depends_on:
+      prometheus:
+        condition: service_started
+    networks:
+      - platform
+    volumes:
+      - ../../infrastructure/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../infrastructure/observability/grafana/dashboards:/etc/grafana/dashboards:ro
 
   dgraph-zero:
     image: dgraph/dgraph:v23.1.0

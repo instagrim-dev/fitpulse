@@ -21,6 +21,9 @@ type Config struct {
 	DLQPollInterval    time.Duration // Interval between DLQ polling iterations.
 	DLQMaxRetries      int           // Maximum number of DLQ retry attempts before quarantine.
 	DLQBaseDelay       time.Duration // Base delay used for exponential backoff.
+	ConsumerGroupID    string
+	ConsumerTopics     []string
+	MetricsAddress     string
 }
 
 // Load reads environment variables into Config, applying sensible defaults for local dev.
@@ -36,10 +39,14 @@ func Load() Config {
 		DLQPollInterval:    getDurationEnv("DLQ_POLL_INTERVAL", 30*time.Second),
 		DLQMaxRetries:      getIntEnv("DLQ_MAX_RETRIES", 5),
 		DLQBaseDelay:       getDurationEnv("DLQ_BASE_DELAY", time.Minute),
+		ConsumerGroupID:    getEnv("CONSUMER_GROUP_ID", "activity-service-consumer"),
+		MetricsAddress:     getEnv("METRICS_ADDRESS", ":9095"),
 	}
 
 	brokers := getEnv("KAFKA_BROKERS", "kafka:9092")
 	cfg.KafkaBrokers = splitAndTrim(brokers)
+	topics := getEnv("CONSUMER_TOPICS", "activity_events,activity_state_changed")
+	cfg.ConsumerTopics = splitAndTrim(topics)
 	return cfg
 }
 

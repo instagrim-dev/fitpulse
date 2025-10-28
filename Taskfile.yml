@@ -78,6 +78,12 @@ tasks:
     cmds:
       - pnpm run test:run
 
+  web:test:e2e:
+    desc: Run Playwright E2E tests (requires browsers)
+    dir: frontend/web
+    cmds:
+      - pnpm run test:e2e
+
   prepull:images:
     desc: Pre-pull container images used by docker-compose
     cmds:

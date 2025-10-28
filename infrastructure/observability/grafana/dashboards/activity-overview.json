@@ -1,0 +1,103 @@
+{
+  "id": null,
+  "uid": "activity-overview",
+  "title": "Activity Platform Overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Consumer Lag (s)",
+      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {
+          "expr": "time() - activity_service_consumer_last_message_timestamp_seconds",
+          "legendFormat": "{{topic}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 300}]}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "graph",
+      "title": "DLQ Backlog",
+      "gridPos": {"x": 8, "y": 0, "w": 8, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {
+          "expr": "activity_service_dlq_queued_messages",
+          "refId": "A"
+        }
+      ],
+      "yaxes": [
+        {"format": "short", "label": "Messages", "logBase": 1, "min": 0},
+        {"format": "short"}
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "Processed vs Handler Errors",
+      "gridPos": {"x": 16, "y": 0, "w": 8, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {
+          "expr": "rate(activity_service_consumer_messages_processed_total[5m])",
+          "legendFormat": "processed {{topic}}/{{event_type}}",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(activity_service_consumer_handler_errors_total[5m])",
+          "legendFormat": "errors {{topic}}/{{event_type}}",
+          "refId": "B"
+        }
+      ],
+      "yaxes": [
+        {"format": "ops", "label": "events/s", "logBase": 1},
+        {"format": "ops"}
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "DLQ Quarantined",
+      "gridPos": {"x": 0, "y": 6, "w": 12, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {
+          "expr": "increase(activity_service_dlq_messages_quarantined_total[1h])",
+          "legendFormat": "{{topic}}/{{event_type}}",
+          "refId": "A"
+        }
+      ],
+      "yaxes": [
+        {"format": "short", "logBase": 1},
+        {"format": "short"}
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "Outbox Delivery Latency",
+      "gridPos": {"x": 12, "y": 6, "w": 12, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(activity_service_outbox_batch_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "A"
+        }
+      ],
+      "yaxes": [
+        {"format": "s", "logBase": 1},
+        {"format": "short"}
+      ]
+    }
+  ]
+}

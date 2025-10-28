@@ -60,11 +60,37 @@ export interface ActivityItem {
   duration_min: number;
   source: string;
   status: string;
+  version?: string;
+  created_at?: string;
+  updated_at?: string;
+  failure_reason?: string;
+  next_retry_at?: string;
+  quarantined_at?: string;
+  replay_available?: boolean;
 }
 
 export interface ActivityListResponse {
   items: ActivityItem[];
   next_cursor?: string;
+}
+
+export interface ActivityMetricsSummary {
+  total: number;
+  pending: number;
+  synced: number;
+  failed: number;
+  average_duration_minutes: number;
+  average_processing_seconds: number;
+  oldest_pending_age_seconds: number;
+  success_rate: number;
+  last_activity_at?: string;
+}
+
+export interface ActivityMetricsResponse {
+  summary: ActivityMetricsSummary;
+  timeline: ActivityItem[];
+  timeline_limit: number;
+  window_seconds: number;
 }
 
 /**
@@ -90,4 +116,38 @@ export async function listActivities(token: string, userId: string, cursor?: str
     throw new Error(`List failed: ${resp.status}`);
   }
   return (await resp.json()) as ActivityListResponse;
+}
+
+interface MetricsOptions {
+  timelineLimit?: number;
+  windowHours?: number;
+}
+
+/**
+ * Fetch aggregate activity metrics and a recent timeline for the supplied user.
+ */
+/**
+ * Retrieve aggregated metrics and a recent activity timeline for the supplied user.
+ *
+ * @param token - Bearer token providing tenant scope.
+ * @param userId - Identifier of the user whose metrics should be returned.
+ * @param options - Optional timeline/window overrides.
+ */
+export async function getActivityMetrics(token: string, userId: string, options: MetricsOptions = {}) {
+  const params = new URLSearchParams({ user_id: userId });
+  if (options.timelineLimit && options.timelineLimit > 0) {
+    params.set('timeline_limit', String(options.timelineLimit));
+  }
+  if (options.windowHours !== undefined && options.windowHours >= 0) {
+    params.set('window_hours', String(options.windowHours));
+  }
+  const resp = await fetch(`${ACTIVITY_API_URL}/v1/activities/metrics?${params.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!resp.ok) {
+    throw new Error(`Metrics fetch failed: ${resp.status}`);
+  }
+  return (await resp.json()) as ActivityMetricsResponse;
 }

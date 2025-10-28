@@ -50,6 +50,20 @@ components:
         updated_at:
           type: string
           format: date-time
+        failure_reason:
+          type: string
+          description: Most recent DLQ failure message associated with the activity, if any.
+        next_retry_at:
+          type: string
+          format: date-time
+          description: Timestamp when the DLQ manager will attempt another replay.
+        quarantined_at:
+          type: string
+          format: date-time
+          description: When the DLQ entry was quarantined after exhausting retries.
+        replay_available:
+          type: boolean
+          description: Indicates whether the activity is queued for replay (quarantine absent).
       required:
       - activity_id
       - tenant_id
@@ -60,6 +74,45 @@ components:
       - source
       - version
       - status
+    ActivityMetricsSummary:
+      type: object
+      properties:
+        total:
+          type: integer
+        pending:
+          type: integer
+        synced:
+          type: integer
+        failed:
+          type: integer
+        average_duration_minutes:
+          type: number
+          format: float
+        average_processing_seconds:
+          type: number
+          format: float
+        oldest_pending_age_seconds:
+          type: number
+          format: float
+        success_rate:
+          type: number
+          format: float
+        last_activity_at:
+          type: string
+          format: date-time
+    ActivityMetricsResponse:
+      type: object
+      properties:
+        summary:
+          $ref: '#/components/schemas/ActivityMetricsSummary'
+        timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/Activity'
+        timeline_limit:
+          type: integer
+        window_seconds:
+          type: integer
 paths:
   /v1/activities:
     post:
@@ -167,6 +220,51 @@ paths:
                       $ref: '#/components/schemas/Activity'
                   next_cursor:
                     type: string
+  /v1/activities/metrics:
+    get:
+      summary: Activity metrics
+      description: Retrieve aggregate statistics and a recent activity timeline for a specific user.
+      security:
+      - bearerAuth: []
+      tags:
+      - Activities
+      operationId: getActivityMetrics
+      parameters:
+      - name: user_id
+        in: query
+        required: true
+        schema:
+          type: string
+        description: Identifier of the user whose activities should be summarised.
+      - name: timeline_limit
+        in: query
+        schema:
+          type: integer
+          default: 10
+          maximum: 50
+        description: Maximum number of recent activities to include in the response timeline.
+      - name: window_hours
+        in: query
+        schema:
+          type: integer
+          default: 24
+          minimum: 0
+        description: Optional lookback window (in hours) to apply when computing metrics. Use 0 to include all history.
+      responses:
+        '200':
+          description: Metrics and timeline data for the requested user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityMetricsResponse'
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '500':
+          description: Server error
   /v1/activities/{id}:
     get:
       summary: Get activity by ID
