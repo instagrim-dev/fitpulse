@@ -8,9 +8,12 @@
     "ghcr.io/devcontainers/features/python:1": {
       "version": "3.11"
     },
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "24"
+    }
   },
-  "postCreateCommand": "corepack enable pnpm && task prepull:images",
+  "postCreateCommand": "corepack enable pnpm && corepack use pnpm@10.19.0 && if ! command -v task >/dev/null 2>&1; then go install github.com/go-task/task/v3/cmd/task@latest; export PATH=$HOME/go/bin:$PATH; fi && task prepull:images",
   "customizations": {
     "vscode": {
       "extensions": [

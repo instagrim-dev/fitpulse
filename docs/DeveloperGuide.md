@@ -7,7 +7,7 @@ This guide captures the workflows, tooling, and configuration needed to work pro
 - **Docker Engine** and the docker-compose plugin.
 - **Go 1.25+** (local builds use `golang` container images, but having the toolchain installed helps for IDE integration).
 - **Python 3.11+** (optional locally; the Three Musketeers pattern runs tests via containers).
-- **Node.js 24.x with pnpm 10.x** (`corepack use pnpm@10.19.0`).
+- **Node.js 24.x with pnpm 10.x** (run `corepack enable` then `corepack use pnpm@10.19.0`).
 - Optional: **Playwright browsers** (`pnpm exec playwright install`) for running frontend E2E tests.
 - Optional: set `VITE_ENABLE_TELEMETRY=true` with `VITE_TELEMETRY_URL` when validating telemetry forwarding locally; otherwise events are logged to the console in dev builds.
 - **Task** (`brew install go-task/tap/go-task` or download binaries).
@@ -26,16 +26,16 @@ This guide captures the workflows, tooling, and configuration needed to work pro
 
 Common tasks (`task --list` for the full catalog):
 
-| Command | Purpose |
-| --- | --- |
-| `task prepull:images` | Pull base images (Postgres, Kafka, Schema Registry, Redis, etc.). |
-| `task test:go` | Go unit tests in containers (activity + ontology services). |
-| `task test:python` | Identity service pytest suite (uses fakeredis for rate limiter). |
-| `task test:integration` | Go integration tests (pgx/testcontainers). |
-| `task docs:lint` | Spectral lint for OpenAPI specs. |
-| `task smoke:compose` | Bring up minimal stack, validate health checks, Schema Registry, Redis, and tear down. |
-| `task web:test` | Frontend unit tests via Vitest (headless). |
-| `task web:test:e2e` | Playwright E2E covering dashboard replay flow (requires browsers). |
+| Command | Scope | Notes |
+| --- | --- | --- |
+| `task prepull:images` | Infra | Pull Postgres, Kafka, Schema Registry, Redis, Dgraph, migrate. |
+| `task test:go` | Go unit | Runs activity + ontology unit suites in containers. |
+| `task test:python` | Python unit | Installs identity service with `[dev]` extras and runs pytest. |
+| `task test:integration` | Go integration | Spins Postgres/Kafka/Dgraph via Testcontainers; includes DLQ replay → enrichment flow. |
+| `task smoke:compose` | Full stack smoke | Builds services, registers schemas, validates health checks, tears down. |
+| `task docs:lint` | Tooling | Lints OpenAPI specs with Spectral. |
+| `task web:test` | Frontend unit | Vitest suite in headless mode. |
+| `task web:test:e2e` | Frontend E2E | Playwright scenarios (token refresh, DLQ replay UI); requires installed browsers. |
 
 Most tasks rely on Docker; ensure the daemon is running before executing.
 
@@ -47,8 +47,13 @@ Most tasks rely on Docker; ensure the daemon is running before executing.
    docker compose -f infrastructure/compose/docker-compose.yml up --build
    ```
    This brings up Postgres, Redis, Kafka, Schema Registry, the three services, and the `activity-dlq-manager` worker.
-3. **Access Prometheus metrics**: each Go service exposes `/metrics` (Activity, Ontology). Identity service still relies on middleware instrumentation.
-4. **Swagger UI**: `task docs:serve` mounts `docs/API` and serves combined specs at <http://localhost:8088>.
+3. **Warm Dgraph and Kafka**: `docker compose` automatically starts Dgraph alpha and the Schema Registry-backed Kafka stack. If you prefer manual control, run:
+   ```bash
+   docker compose -f infrastructure/compose/docker-compose.yml up dgraph-alpha kafka schema-registry
+   ```
+   and point ontology service at `DGRAPH_URL=http://localhost:8080`.
+4. **Access Prometheus metrics**: each Go service exposes `/metrics` (Activity, Ontology). Identity service still relies on middleware instrumentation.
+5. **Swagger UI**: `task docs:serve` mounts `docs/API` and serves combined specs at <http://localhost:8088>.
 
 ## 5. Identity Service Notes
 

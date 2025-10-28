@@ -22,6 +22,7 @@ A modern **fitness and wellness tracker** that enables users to log, monitor, an
 ---
 
 ## 2. Architecture Summary
+
 ```mermaid
 flowchart TD
   Frontend["React SPA"] -->|REST / HTTPS| Gateway["API Gateway / Ingress"]
@@ -115,6 +116,8 @@ While the transactional outbox pattern provides a strong guarantee of atomicity,
 Prometheus scrapes the activity API, Kafka consumer, and DLQ manager endpoints; Grafana dashboards visualize the core delivery metrics. Alert rules (consumer stall, DLQ backlog, quarantine events) are defined in `infrastructure/observability/prometheus-rules.yaml` to trigger SRE intervention before downstream services fall behind.
 
 ### 5.2 Event Propagation Sequence
+
+The following sequence diagram illustrates the flow of activity events from the frontend through backend services and data stores.
 
 ```mermaid
 sequenceDiagram

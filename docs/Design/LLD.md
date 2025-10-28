@@ -31,9 +31,9 @@ flowchart LR
     IdP[OIDC Provider]
   end
   Client --> CDN --> GW[API Gateway]
-  GW -->|OIDC| IDN[identity-svc (FastAPI)]
-  GW -->|mTLS| ACT[activity-svc (Go)]
-  GW -->|mTLS| EXO[exercise-ontology-svc (Go)]
+  GW -->|OIDC| IDN["identity-svc (FastAPI)"]
+  GW -->|mTLS| ACT["activity-svc (Go)"]
+  GW -->|mTLS| EXO["exercise-ontology-svc (Go)"]
 
   IDN --> PG[(Postgres OLTP)]
   ACT --> PG

@@ -28,17 +28,17 @@ A three-service platform for tenant-aware identity, reliable activity ingestion,
 ```mermaid
 flowchart LR
   Web[React Frontend] -->|REST / HTTPS| Gateway[API Gateway]
-  Gateway --> Identity[Identity Service<br/>(FastAPI)]
-  Gateway --> Activity[Activity Service<br/>(Go)]
-  Gateway --> Ontology[Exercise Ontology Service<br/>(Go)]
+  Gateway --> Identity["Identity Service<br/>(FastAPI)"]
+  Gateway --> Activity["Activity Service<br/>(Go)"]
+  Gateway --> Ontology["Exercise Ontology Service<br/>(Go)"]
 
-  Identity --> Postgres[(PostgreSQL<br/>RLS)]
+  Identity --> Postgres["(PostgreSQL<br/>RLS)"]
   Activity --> Postgres
-  Activity --> Outbox[(Transactional Outbox)]
-  Outbox --> Kafka[(Kafka + Schema Registry)]
+  Activity --> Outbox["(Transactional Outbox)"]
+  Outbox --> Kafka["(Kafka + Schema Registry)"]
   Kafka --> Ontology
-  Ontology --> Dgraph[(Dgraph Ontology)]
-  Kafka --> Analytics[(Future Analytics / OLAP)]
+  Ontology --> Dgraph["(Dgraph Ontology)"]
+  Kafka --> Analytics["(Future Analytics / OLAP)"]
 ```
 
 Design decisions, contracts, and rollout plans live in `docs/Design/HLD.md` and `docs/Design/LLD.md`.
