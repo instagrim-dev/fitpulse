@@ -33,7 +33,12 @@ func (h *EnrichmentHandler) Handle(ctx context.Context, msg Message) error {
 	}
 
 	var evt events.ActivityCreated
-	if err := json.Unmarshal(msg.Payload, &evt); err != nil {
+	payload := msg.Payload
+	// Handle Confluent Schema Registry wire format (magic byte + 4-byte schema id)
+	if len(payload) >= 5 && payload[0] == 0x00 {
+		payload = payload[5:]
+	}
+	if err := json.Unmarshal(payload, &evt); err != nil {
 		return err
 	}
 

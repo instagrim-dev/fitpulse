@@ -67,8 +67,6 @@ class AccountService:
         account = self._repository.get_account(account_id, tenant_id)
         if account is None:
             raise ValueError("account not found")
-        if account.tenant_id != tenant_id:
-            raise ValueError("tenant mismatch")
 
         effective_scopes = scopes or ["activities:write", "activities:read", "ontology:read"]
         access_token, expires_in = issue_access_token(

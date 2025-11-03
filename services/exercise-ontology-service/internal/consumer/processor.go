@@ -89,6 +89,8 @@ func (p *Processor) Run(ctx context.Context) error {
 
 		if err := p.handler.Handle(ctx, decoded); err != nil {
 			p.logger.Printf("handler error (topic=%s offset=%d): %v", msg.Topic, msg.Offset, err)
+		} else {
+			p.logger.Printf("processed (topic=%s offset=%d)", msg.Topic, msg.Offset)
 		}
 
 		if err := p.reader.CommitMessages(ctx, msg); err != nil {

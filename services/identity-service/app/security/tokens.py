@@ -36,8 +36,8 @@ def issue_access_token(*, subject: str, tenant_id: str, scopes: list[str] | None
     default_scopes = scopes or ["activities:write", "activities:read", "ontology:read"]
     payload: dict[str, Any] = {
         "iss": settings.jwt_issuer,
-        "sub": subject,
-        "tenant_id": tenant_id,
+        "sub": str(subject),
+        "tenant_id": str(tenant_id),
         "scopes": default_scopes,
         "iat": now,
         "exp": now + expires_in,

@@ -38,14 +38,37 @@ func main() {
 	handler.RegisterRoutes(mux)
 	mux.Handle("/metrics", promhttp.Handler())
 
+	// Simple CORS middleware for local dev
+	cors := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+
 	middleware := auth.NewMiddleware(auth.Config{Secret: cfg.JWTSecret, Issuer: cfg.JWTIssuer})
+
+	// Basic request logger
+	logger := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			log.Printf("%s %s", r.Method, r.URL.Path)
+			next.ServeHTTP(w, r)
+		})
+	}
 
 	server := httptransport.NewServer(httptransport.ServerConfig{
 		Address:      cfg.HTTPAddress,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
-	}, middleware.Wrap(mux))
+	}, middleware.Wrap(logger(cors(mux))))
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)

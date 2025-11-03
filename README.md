@@ -66,6 +66,9 @@ task prepull:images
 # Launch full stack & run smoke probes
 task smoke:compose
 
+# Full-stack dev (compose backend + frontend dev server)
+task dev:all
+
 # Run service test matrices
 task test:go
 task test:python     # installs .[dev] in container before pytest

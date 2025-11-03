@@ -10,6 +10,7 @@ from typing import Any, Optional, Tuple
 
 from psycopg.rows import tuple_row
 from psycopg_pool import ConnectionPool
+from psycopg.types.json import Json
 
 from .domain.account import Account
 from .domain.contracts import CreateAccountInput
@@ -176,7 +177,7 @@ class AccountRepository:
                     VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING token_id, account_id, tenant_id, expires_at, revoked_at
                     """,
-                    (token_id, account_id, tenant_id, token_hash, expires_at, metadata or {}),
+                    (token_id, account_id, tenant_id, token_hash, expires_at, Json(metadata or {})),
                 )
                 row = cur.fetchone()
                 conn.commit()
@@ -230,7 +231,7 @@ class AccountRepository:
                     INSERT INTO identity_audit_log (account_id, tenant_id, event_type, actor, metadata)
                     VALUES (%s, %s, %s, %s, %s)
                     """,
-                    (account_id, tenant_id, event_type, actor, metadata or {}),
+                    (account_id, tenant_id, event_type, actor, Json(metadata or {})),
                 )
                 conn.commit()
 

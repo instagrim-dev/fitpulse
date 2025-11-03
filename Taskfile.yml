@@ -122,3 +122,10 @@ tasks:
     cmds:
       - task test:integration
       - task smoke:compose
+
+  dev:all:
+    desc: Launch compose backend and frontend dev server
+    deps: [web:install]
+    cmds:
+      - docker compose -f infrastructure/compose/docker-compose.yml up --build -d
+      - cd frontend/web && pnpm run dev

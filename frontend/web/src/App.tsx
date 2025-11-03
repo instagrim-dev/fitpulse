@@ -12,7 +12,7 @@ import { AuthContext } from './context/AuthContext';
 import { refreshAccessToken } from './api/identity';
 import { trackEvent } from './telemetry/logger';
 
-const DEFAULT_USER_ID = import.meta.env.VITE_DEFAULT_USER_ID || 'user-1';
+const DEFAULT_USER_ID = import.meta.env.VITE_DEFAULT_USER_ID || '11111111-1111-1111-1111-111111111111';
 const STORAGE_KEY = 'i5e-auth';
 
 /**
@@ -23,9 +23,9 @@ const STORAGE_KEY = 'i5e-auth';
  */
 export default function App() {
   const [token, setToken] = useState('');
-  const [tenantId, setTenantId] = useState('tenant-demo');
+  const [tenantId, setTenantId] = useState('22222222-2222-2222-2222-222222222222');
   const [userId, setUserId] = useState(DEFAULT_USER_ID);
-  const [accountId, setAccountId] = useState('account-demo');
+  const [accountId, setAccountId] = useState('11111111-1111-1111-1111-111111111111');
   const [remember, setRemember] = useState(true);
   const [ontologyQuery, setOntologyQuery] = useState('ride');
   const [refreshToken, setRefreshToken] = useState('');

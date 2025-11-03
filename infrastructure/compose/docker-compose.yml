@@ -140,7 +140,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U platform"]
+      test: ["CMD-SHELL", "pg_isready -U platform -d fitness"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -281,7 +281,7 @@ services:
         condition: service_started
     command: dgraph alpha --my=dgraph-alpha:7080 --zero=dgraph-zero:5080 --security whitelist=0.0.0.0/0
     ports:
-      - "8080:8080"
+      - "7080:8080"
       - "9080:9080"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]

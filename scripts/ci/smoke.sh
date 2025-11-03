@@ -27,6 +27,10 @@ SMOKE_SERVICES=(
   identity-service
   activity-service
   activity-dlq-manager
+  dgraph-alpha
+  dgraph-schema
+  exercise-ontology-service
+  exercise-ontology-consumer
 )
 
 # shellcheck source=../lib/wait.sh disable=SC1091
@@ -53,6 +57,10 @@ assert_ready "kafka" kafka_ready kafka 90
 assert_ready "schema-registry" schema_registry_ready schema-registry 90
 assert_ready "identity-service" identity_ready identity-service 90
 assert_ready "activity-service" activity_ready activity-service 90
+assert_ready "dgraph" dgraph_ready dgraph-alpha 120
+assert_ready "exercise-ontology-service" ontology_ready exercise-ontology-service 90
+assert_ready "dlq-metrics" dlq_metrics_ready activity-dlq-manager 90
+assert_ready "ontology-consumer-metrics" ontology_consumer_metrics_ready exercise-ontology-consumer 90
 
 echo "[smoke] verifying schema registry subjects"
 "$ROOT_DIR/scripts/ci/schema_registry_check.sh"

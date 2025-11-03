@@ -78,3 +78,19 @@ identity_ready() {
 activity_ready() {
   curl --silent --show-error --fail --max-time 3 http://localhost:8080/healthz >/dev/null
 }
+
+dgraph_ready() {
+  curl --silent --show-error --fail --max-time 3 http://localhost:7080/health >/dev/null
+}
+
+ontology_ready() {
+  curl --silent --show-error --fail --max-time 3 http://localhost:8090/healthz >/dev/null
+}
+
+dlq_metrics_ready() {
+  curl --silent --show-error --fail --max-time 3 http://localhost:9096/metrics >/dev/null
+}
+
+ontology_consumer_metrics_ready() {
+  curl --silent --show-error --fail --max-time 3 http://localhost:9195/metrics >/dev/null
+}
