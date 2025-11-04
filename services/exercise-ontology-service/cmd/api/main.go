@@ -68,7 +68,7 @@ func main() {
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
-	}, middleware.Wrap(logger(cors(mux))))
+	}, cors(logger(middleware.Wrap(mux))))
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)

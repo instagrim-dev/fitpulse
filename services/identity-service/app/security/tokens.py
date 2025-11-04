@@ -33,7 +33,7 @@ def issue_access_token(*, subject: str, tenant_id: str, scopes: list[str] | None
     settings = get_settings()
     now = int(time.time())
     expires_in = settings.jwt_ttl_seconds
-    default_scopes = scopes or ["activities:write", "activities:read", "ontology:read"]
+    default_scopes = scopes or ["activities:write", "activities:read", "ontology:read", "ontology:write"]
     payload: dict[str, Any] = {
         "iss": settings.jwt_issuer,
         "sub": str(subject),

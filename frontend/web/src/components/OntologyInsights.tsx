@@ -39,15 +39,17 @@ export function OntologyInsights({ query }: OntologyInsightsProps) {
       {isLoading && <p>Loading insights…</p>}
       {!isLoading && data && (
         <ul className="insights-list">
-          {data.items.slice(0, 5).map((exercise) => (
-            <li key={exercise.id}>
-              <strong>{exercise.name}</strong>
-              <div className="meta">
-                Difficulty: {exercise.difficulty || 'n/a'} | Targets:{' '}
-                {exercise.targets?.join(', ') || 'n/a'}
-              </div>
-            </li>
-          ))}
+          {Array.from(new Map(data.items.map((e) => [e.id, e])).values())
+            .slice(0, 5)
+            .map((exercise) => (
+              <li key={exercise.id}>
+                <strong>{exercise.name}</strong>
+                <div className="meta">
+                  Difficulty: {exercise.difficulty || 'n/a'} | Targets:{' '}
+                  {exercise.targets?.join(', ') || 'n/a'}
+                </div>
+              </li>
+            ))}
           {data.items.length === 0 && <li>No matching exercises yet.</li>}
         </ul>
       )}

@@ -29,6 +29,7 @@ export function ActivityForm({ userId }: ActivityFormProps) {
   const { token } = useContext(AuthContext);
   const queryClient = useQueryClient();
   const [activityType, setActivityType] = useState('Run');
+  const [difficulty, setDifficulty] = useState('');
   const [duration, setDuration] = useState(30);
   const [startTime, setStartTime] = useState(new Date().toISOString().slice(0, 16));
   const [source, setSource] = useState('web-ui');
@@ -116,6 +117,14 @@ export function ActivityForm({ userId }: ActivityFormProps) {
         <label>
           Activity type
           <input value={activityType} onChange={(e) => setActivityType(e.target.value)} required />
+        </label>
+        <label>
+          Difficulty
+          <input
+            placeholder="e.g. beginner, intermediate, advanced"
+            value={difficulty}
+            onChange={(e) => setDifficulty(e.target.value)}
+          />
         </label>
         <label>
           Duration (minutes)

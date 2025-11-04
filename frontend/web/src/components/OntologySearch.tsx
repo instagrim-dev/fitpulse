@@ -87,7 +87,7 @@ export function OntologySearch({ query, onQueryChange }: OntologySearchProps) {
           )}
           {token && hasResults && (
             <ul className="list">
-              {data?.items.map((ex) => (
+              {Array.from(new Map((data?.items ?? []).map((ex) => [ex.id, ex])).values()).map((ex) => (
                 <li key={ex.id}>
                   <strong>{ex.name}</strong> — {ex.difficulty || 'n/a'}
                   {ex.targets && ex.targets.length > 0 && (

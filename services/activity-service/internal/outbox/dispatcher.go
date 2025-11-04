@@ -214,8 +214,12 @@ func (d *Dispatcher) deliver(ctx context.Context, messages []Message) error {
 
 func (d *Dispatcher) markPublished(ctx context.Context, messages []Message) error {
 	groups := make(map[string][]int64)
+	createdByTenant := make(map[string][]string)
 	for _, msg := range messages {
 		groups[msg.TenantID] = append(groups[msg.TenantID], msg.EventID)
+		if msg.EventType == "activity.created" {
+			createdByTenant[msg.TenantID] = append(createdByTenant[msg.TenantID], msg.AggregateID)
+		}
 	}
 
 	for tenantID, ids := range groups {
@@ -240,6 +244,16 @@ func (d *Dispatcher) markPublished(ctx context.Context, messages []Message) erro
 			tx.Rollback(ctx)
 			conn.Release()
 			return err
+		}
+
+		if createdIDs, ok := createdByTenant[tenantID]; ok && len(createdIDs) > 0 {
+			// Mark activities as synced once their creation event has been published successfully.
+			if _, err := tx.Exec(ctx, `UPDATE activities SET processing_state='synced', updated_at=NOW() WHERE activity_id = ANY($1::uuid[]) RETURNING NOW()` , createdIDs); err != nil {
+				tx.Rollback(ctx)
+				conn.Release()
+				return err
+			}
+			markedSyncedCounter.Add(float64(len(createdIDs)))
 		}
 
 		if err := tx.Commit(ctx); err != nil {

@@ -79,7 +79,7 @@ func main() {
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
-	}, authMiddleware.Wrap(logger(cors(mux))))
+	}, cors(logger(authMiddleware.Wrap(mux))))
 
 	shutdownCh := make(chan os.Signal, 1)
 	signal.Notify(shutdownCh, syscall.SIGINT, syscall.SIGTERM)

@@ -68,7 +68,9 @@ class AccountService:
         if account is None:
             raise ValueError("account not found")
 
-        effective_scopes = scopes or ["activities:write", "activities:read", "ontology:read"]
+        effective_scopes = scopes or ["activities:write", "activities:read", "ontology:read", "ontology:write"]
+        if "ontology:write" not in effective_scopes:
+            effective_scopes = list({*effective_scopes, "ontology:write"})
         access_token, expires_in = issue_access_token(
             subject=account.account_id,
             tenant_id=tenant_id,

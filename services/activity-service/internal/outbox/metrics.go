@@ -31,8 +31,16 @@ var (
 		Name:      "events_dlq_total",
 		Help:      "Number of outbox events routed to the dead-letter queue, labeled by topic.",
 	}, []string{"topic"})
+
+	// Tracks number of activities marked synced by dispatcher after publish
+	markedSyncedCounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "activity_service",
+		Subsystem: "outbox",
+		Name:      "activities_marked_synced_total",
+		Help:      "Count of activities transitioned to synced after outbox publish.",
+	})
 )
 
 func init() {
-	prometheus.MustRegister(deliveredCounter, failedCounter, batchDuration, dlqCounter)
+	prometheus.MustRegister(deliveredCounter, failedCounter, batchDuration, dlqCounter, markedSyncedCounter)
 }
