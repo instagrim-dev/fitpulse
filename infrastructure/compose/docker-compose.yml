@@ -1,10 +1,12 @@
+name: i5e-platform
+
 services:
   identity-service:
     build:
       context: ../../
       dockerfile: services/identity-service/Dockerfile
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - HTTP_PORT=8000
       - POSTGRES_URL=postgres://platform:platform@postgres:5432/fitness
@@ -28,7 +30,7 @@ services:
       context: ../../
       dockerfile: services/activity-service/Dockerfile
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       - HTTP_ADDRESS=:8080
       - POSTGRES_URL=postgres://platform:platform@postgres:5432/fitness?sslmode=disable
@@ -39,10 +41,10 @@ services:
       - CONSUMER_GROUP_ID=activity-service-consumer
       - CONSUMER_TOPICS=activity_events,activity_state_changed
     depends_on:
-      postgres-seed:
-        condition: service_completed_successfully
       kafka:
         condition: service_started
+      postgres-seed:
+        condition: service_completed_successfully
       schema-registry-init:
         condition: service_completed_successfully
     networks:
@@ -66,7 +68,7 @@ services:
     networks:
       - platform
     ports:
-      - "9096:9096"
+      - "127.0.0.1:9096:9096"
 
   activity-consumer:
     build:
@@ -81,21 +83,21 @@ services:
       - CONSUMER_TOPICS=activity_events,activity_state_changed
       - METRICS_ADDRESS=:9095
     depends_on:
-      postgres-seed:
-        condition: service_completed_successfully
       kafka:
         condition: service_started
+      postgres-seed:
+        condition: service_completed_successfully
     networks:
       - platform
     ports:
-      - "9095:9095"
+      - "127.0.0.1:9095:9095"
 
   exercise-ontology-service:
     build:
       context: ../../
       dockerfile: services/exercise-ontology-service/Dockerfile
     ports:
-      - "8090:8090"
+      - "127.0.0.1:8090:8090"
     environment:
       - HTTP_ADDRESS=:8090
       - DGRAPH_URL=http://dgraph-alpha:8080
@@ -123,7 +125,7 @@ services:
       kafka:
         condition: service_started
     ports:
-      - "9195:9195"
+      - "127.0.0.1:9195:9195"
     networks:
       - platform
 
@@ -134,7 +136,7 @@ services:
       POSTGRES_PASSWORD: platform
       POSTGRES_DB: fitness
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -177,7 +179,7 @@ services:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "no"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -192,7 +194,7 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     ports:
-      - "2181:2181"
+      - "127.0.0.1:2181:2181"
     networks:
       - platform
 
@@ -212,7 +214,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
     ports:
-      - "9092:9092"
+      - "127.0.0.1:9092:9092"
     networks:
       - platform
 
@@ -227,7 +229,7 @@ services:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     networks:
       - platform
 
@@ -250,7 +252,7 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - ../../infrastructure/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ../../infrastructure/observability/prometheus-rules.yaml:/etc/prometheus/alerting/prometheus-rules.yaml:ro
@@ -263,7 +265,7 @@ services:
   grafana:
     image: grafana/grafana:11.2.0
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
@@ -281,8 +283,8 @@ services:
     image: dgraph/dgraph:v23.1.0
     command: dgraph zero --my=dgraph-zero:5080
     ports:
-      - "5080:5080"
-      - "6080:6080"
+      - "127.0.0.1:5080:5080"
+      - "127.0.0.1:6080:6080"
     networks:
       - platform
 
@@ -293,8 +295,8 @@ services:
         condition: service_started
     command: dgraph alpha --my=dgraph-alpha:7080 --zero=dgraph-zero:5080 --security whitelist=0.0.0.0/0
     ports:
-      - "7080:8080"
-      - "9080:9080"
+      - "127.0.0.1:7080:8080"
+      - "127.0.0.1:9080:9080"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s
@@ -321,9 +323,9 @@ services:
       - platform
 
   api-docs:
-    image: swaggerapi/swagger-ui:latest
+    image: swaggerapi/swagger-ui:v5.17.14
     ports:
-      - "8088:8080"
+      - "127.0.0.1:8088:8080"
     environment:
       SWAGGER_CONFIG_URL: /swagger-config.json
     volumes:
@@ -339,18 +341,18 @@ services:
       - web-node-modules:/app/node_modules
     command: sh -lc "corepack enable pnpm && pnpm install --frozen-lockfile && pnpm run dev --host 0.0.0.0"
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     environment:
       - VITE_ACTIVITY_API_URL=http://localhost:8080
       - VITE_ONTOLOGY_API_URL=http://localhost:8090
       - VITE_IDENTITY_API_URL=http://localhost:8000
       - VITE_DEFAULT_USER_ID=11111111-1111-1111-1111-111111111111
     depends_on:
-      identity-service:
-        condition: service_started
       activity-service:
         condition: service_started
       exercise-ontology-service:
+        condition: service_started
+      identity-service:
         condition: service_started
     networks:
       - platform
