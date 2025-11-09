@@ -12,7 +12,7 @@ import { AuthContext } from './context/AuthContext';
 import { refreshAccessToken } from './api/identity';
 import { trackEvent } from './telemetry/logger';
 
-const DEFAULT_USER_ID = import.meta.env.VITE_DEFAULT_USER_ID || '11111111-1111-1111-1111-111111111111';
+const DEFAULT_USER_ID = import.meta.env.VITE_DEFAULT_USER_ID || 'user-1';
 const STORAGE_KEY = 'i5e-auth';
 
 /**

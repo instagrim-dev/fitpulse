@@ -108,9 +108,10 @@ test.describe('Ontology insights', () => {
     await page.getByLabel('Search term').fill('squat');
     await expect(page.locator('#ontology .list li')).toContainText('Air Squat');
 
-    await page.getByLabel('Name').fill('Explosive Squat');
-    await page.getByLabel('Difficulty').fill('advanced');
-    await page.getByLabel('Targets (comma-separated)').fill('legs,power');
+    const ontologyPanel = page.locator('#ontology');
+    await ontologyPanel.getByLabel('Name').fill('Explosive Squat');
+    await ontologyPanel.getByLabel('Difficulty').fill('advanced');
+    await ontologyPanel.getByLabel('Targets (comma-separated)').fill('legs,power');
     await page.getByRole('button', { name: 'Save Exercise' }).click();
 
     await expect(page.getByText('Exercise saved.')).toBeVisible();

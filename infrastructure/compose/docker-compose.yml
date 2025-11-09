@@ -346,7 +346,7 @@ services:
       - VITE_ACTIVITY_API_URL=http://localhost:8080
       - VITE_ONTOLOGY_API_URL=http://localhost:8090
       - VITE_IDENTITY_API_URL=http://localhost:8000
-      - VITE_DEFAULT_USER_ID=11111111-1111-1111-1111-111111111111
+      - VITE_DEFAULT_USER_ID=user-1
     depends_on:
       activity-service:
         condition: service_started
