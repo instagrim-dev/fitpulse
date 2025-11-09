@@ -7,6 +7,10 @@ import secrets
 import time
 from typing import Any
 
+import jwt
+
+from ..config import get_settings
+
 DEFAULT_SCOPES: tuple[str, ...] = (
     "activities:write",
     "activities:read",
@@ -15,19 +19,10 @@ DEFAULT_SCOPES: tuple[str, ...] = (
 
 
 def normalize_scopes(scopes: list[str] | None) -> list[str]:
-    """Return a copy of the provided scopes preserving order and removing duplicates.
-
-    When no scopes are passed fall back to the curated default tuple. `dict.fromkeys`
-    preserves the first occurrence order making it suitable for deduplicating
-    user-supplied lists without surprising resorting.
-    """
+    """Return a copy of the provided scopes preserving order and removing duplicates."""
 
     values = scopes if scopes else list(DEFAULT_SCOPES)
     return list(dict.fromkeys(values))
-
-import jwt
-
-from ..config import get_settings
 
 
 def issue_access_token(*, subject: str, tenant_id: str, scopes: list[str] | None = None) -> tuple[str, int]:
