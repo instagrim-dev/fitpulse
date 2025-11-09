@@ -1,5 +1,5 @@
-import fs from 'node:fs';
-import path from 'node:path';
+const fs = require('node:fs');
+const path = require('node:path');
 
 const SARIF_SCHEMA = 'https://json.schemastore.org/sarif-2.1.0.json';
 const SARIF_PATH = process.env.DCLINT_SARIF_PATH || 'dclint.sarif';
@@ -62,10 +62,6 @@ function buildSarif(results = []) {
     });
   });
 
-  if (!sarifResults.length) {
-    return null;
-  }
-
   return {
     version: '2.1.0',
     $schema: SARIF_SCHEMA,
@@ -85,13 +81,6 @@ function buildSarif(results = []) {
 }
 
 function writeSarifReport(sarif) {
-  if (!sarif) {
-    if (fs.existsSync(SARIF_PATH)) {
-      fs.rmSync(SARIF_PATH);
-    }
-    return;
-  }
-
   const dir = path.dirname(SARIF_PATH);
   if (dir && dir !== '.' && !fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -116,7 +105,7 @@ function buildAnnotations(results = []) {
   return entries.join('\n');
 }
 
-export default function formatterGithub(results = []) {
+function formatterGithub(results = []) {
   const sarif = buildSarif(results);
   try {
     writeSarifReport(sarif);
@@ -125,3 +114,6 @@ export default function formatterGithub(results = []) {
   }
   return buildAnnotations(results);
 }
+
+module.exports = formatterGithub;
+module.exports.default = formatterGithub;
