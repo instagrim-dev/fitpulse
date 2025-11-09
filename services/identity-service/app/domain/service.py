@@ -12,7 +12,12 @@ from .account import Account
 from .contracts import CreateAccountInput
 from ..config import get_settings
 from ..repository import AccountRepository, AuditLogRecord
-from ..security.tokens import generate_refresh_token, hash_refresh_token, issue_access_token
+from ..security.tokens import (
+    generate_refresh_token,
+    hash_refresh_token,
+    issue_access_token,
+    normalize_scopes,
+)
 
 
 @dataclass(slots=True)
@@ -68,9 +73,7 @@ class AccountService:
         if account is None:
             raise ValueError("account not found")
 
-        effective_scopes = scopes or ["activities:write", "activities:read", "ontology:read", "ontology:write"]
-        if "ontology:write" not in effective_scopes:
-            effective_scopes = list({*effective_scopes, "ontology:write"})
+        effective_scopes = normalize_scopes(scopes)
         access_token, expires_in = issue_access_token(
             subject=account.account_id,
             tenant_id=tenant_id,

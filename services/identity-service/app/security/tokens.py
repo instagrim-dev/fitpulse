@@ -7,6 +7,24 @@ import secrets
 import time
 from typing import Any
 
+DEFAULT_SCOPES: tuple[str, ...] = (
+    "activities:write",
+    "activities:read",
+    "ontology:read",
+)
+
+
+def normalize_scopes(scopes: list[str] | None) -> list[str]:
+    """Return a copy of the provided scopes preserving order and removing duplicates.
+
+    When no scopes are passed fall back to the curated default tuple. `dict.fromkeys`
+    preserves the first occurrence order making it suitable for deduplicating
+    user-supplied lists without surprising resorting.
+    """
+
+    values = scopes if scopes else list(DEFAULT_SCOPES)
+    return list(dict.fromkeys(values))
+
 import jwt
 
 from ..config import get_settings
@@ -33,7 +51,7 @@ def issue_access_token(*, subject: str, tenant_id: str, scopes: list[str] | None
     settings = get_settings()
     now = int(time.time())
     expires_in = settings.jwt_ttl_seconds
-    default_scopes = scopes or ["activities:write", "activities:read", "ontology:read", "ontology:write"]
+    default_scopes = normalize_scopes(scopes)
     payload: dict[str, Any] = {
         "iss": settings.jwt_issuer,
         "sub": str(subject),
