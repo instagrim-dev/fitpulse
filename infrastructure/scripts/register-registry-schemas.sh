@@ -1,5 +1,11 @@
 #!/bin/sh
-set -euo pipefail
+set -eu
+
+# shellcheck disable=SC3040
+if (set -o pipefail) 2>/dev/null; then
+  # shellcheck disable=SC3040
+  set -o pipefail
+fi
 
 SCHEMA_DIR=${SCHEMA_DIR:-/schemas}
 SCHEMA_REGISTRY_URL=${SCHEMA_REGISTRY_URL:-http://schema-registry:8081}
@@ -16,11 +22,6 @@ curl -sS -X PUT "$SCHEMA_REGISTRY_URL/config" \
   -d '{"compatibility":"NONE"}' >/dev/null
 
 echo "[schema-init] registering subjects from $SCHEMA_DIR"
-shopt_set=false
-if command -v bash >/dev/null 2>&1; then
-  # if bash exists, use nullglob to avoid literal *.json when none present
-  set +e; . /etc/profile >/dev/null 2>&1 || true; set -e
-fi
 
 for f in "$SCHEMA_DIR"/*.json; do
   [ -e "$f" ] || continue
